@@ -145,17 +145,18 @@ export async function renderReportDocx(m: ReportModel): Promise<Uint8Array> {
         columnWidths: [10, 30, 30, 30].map(dxa),
         rows: [
           new TableRow({ tableHeader: true, children: ['ETAPA', 'FOTO 1', 'FOTO 2', 'FOTO 3'].map((h, k) => cell(h, { head: true, width: k ? 30 : 10 })) }),
-          ...e.photos.map((r) => new TableRow({
+          ...e.photos.flatMap((st) => st.rows.map((row, ri) => new TableRow({
+            cantSplit: true,
             children: [
-              cell(r.stage, { shade: 'F3F3F3', width: 10 }),
-              ...r.images.map((im) => cell(im
+              ...(ri === 0 ? [cell(st.stage, { shade: 'F3F3F3', width: 10, rowSpan: st.rows.length })] : []),
+              ...row.map((im) => cell(im
                 ? [
                     new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im)] }),
                     new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] }),
                   ]
                 : [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: '—', font: 'Arial' })] })], { width: 30 })),
             ],
-          })),
+          }))),
         ],
       }));
     }

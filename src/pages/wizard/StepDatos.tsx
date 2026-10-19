@@ -18,10 +18,10 @@ import { SERVICE_TYPES, SPECIALTIES, type Service } from '../../lib/types';
 import type { SaveHandler } from './ServicioWizard';
 
 const useStyles = makeStyles({
-  grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start' },
-  form: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 16px' },
-  span2: { gridColumn: 'span 2' },
-  span3: { gridColumn: 'span 3' },
+  grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
+  form: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' }, '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
+  span3: { gridColumn: 'span 3', '@media (max-width: 1000px)': { gridColumn: 'span 2' }, '@media (max-width: 600px)': { gridColumn: 'auto' } },
   col: { display: 'flex', flexDirection: 'column', gap: '16px' },
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' },
   detail: { display: 'flex', alignItems: 'center', gap: '4px' },

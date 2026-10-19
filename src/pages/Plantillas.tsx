@@ -26,8 +26,8 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, padding: '12px', backgroundColor: '#fff',
     display: 'flex', flexDirection: 'column', gap: '6px', minHeight: '130px',
   },
-  form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' },
-  span2: { gridColumn: 'span 2' },
+  form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
 });
 
 type Draft = Omit<ReportTemplate, 'id'> & { id?: string };
@@ -132,7 +132,7 @@ export function Plantillas() {
                     </Dropdown>
                   </Field>
                   <Field label="Secciones incluidas" className={s.span2}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                    <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
                       {SECTIONS.map(([k, l]) => (
                         <Checkbox key={k} label={l} checked={draft.sections.includes(k)}
                           onChange={(_, d) => setDraft({ ...draft, sections: d.checked ? SECTIONS.map(([x]) => x).filter((x) => x === k || draft.sections.includes(x)) : draft.sections.filter((x) => x !== k) })} />

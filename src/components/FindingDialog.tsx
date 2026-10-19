@@ -9,8 +9,8 @@ import { logActivity, type ServiceBundle } from '../lib/services';
 import type { CatalogFinding, Finding, Priority } from '../lib/types';
 
 const useStyles = makeStyles({
-  form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' },
-  span2: { gridColumn: 'span 2' },
+  form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
 });
 
 type Draft = Pick<Finding, 'service_equipment_id' | 'template_item_id' | 'catalog_id' | 'finding' | 'probable_cause' | 'action_taken' | 'recommendation' | 'priority' | 'photo_id'>;

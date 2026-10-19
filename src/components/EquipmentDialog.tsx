@@ -8,8 +8,8 @@ import { supabase } from '../lib/supabase';
 import type { ServiceEquipment } from '../lib/types';
 
 const useStyles = makeStyles({
-  form: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 16px' },
-  span3: { gridColumn: 'span 3' },
+  form: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' }, '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  span3: { gridColumn: 'span 3', '@media (max-width: 1000px)': { gridColumn: 'span 2' }, '@media (max-width: 600px)': { gridColumn: 'auto' } },
 });
 
 export type EquipmentForm = Pick<ServiceEquipment, 'code' | 'equipment_type_id' | 'capacity' | 'unit' | 'brand' | 'model' | 'serial' | 'observation'>;

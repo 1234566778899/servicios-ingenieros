@@ -20,9 +20,9 @@ import { openReportFile, saveReportFile } from '../report/generate';
 import { STAGES, type Report } from '../lib/types';
 
 const useStyles = makeStyles({
-  grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start' },
+  grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   col: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  kv: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 24px' },
+  kv: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 24px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' }, '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
   photos: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' },
   gallery: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' },
   log: { display: 'flex', gap: '10px', alignItems: 'center', padding: '6px 0' },
@@ -198,7 +198,7 @@ export function ServicioDetalle({ id }: { id: string }) {
       {tab === 'fotos' && (
         <div className={s.col}>
           {data.equipment.map((e) => (
-            <Section key={e.id} title={`${e.code} · ${cat.typeName(e.equipment_type_id)}`} subtitle={`${data.photos.filter((p) => p.service_equipment_id === e.id).length}/9`}>
+            <Section key={e.id} title={`${e.code} · ${cat.typeName(e.equipment_type_id)}`} subtitle={`${data.photos.filter((p) => p.service_equipment_id === e.id).length} fotos`}>
               <div className={s.gallery}>
                 {data.photos.filter((p) => p.service_equipment_id === e.id)
                   .sort((a, b) => STAGES.findIndex((x) => x.id === a.stage) - STAGES.findIndex((x) => x.id === b.stage) || a.position - b.position)

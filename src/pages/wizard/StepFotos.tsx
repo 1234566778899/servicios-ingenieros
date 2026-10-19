@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react';
 import {
-  Button, Caption1, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field,
-  Input, Option, ProgressBar, Spinner, Text, Tooltip, makeStyles, tokens,
+  Badge, Button, Caption1, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown,
+  Field, Input, Option, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens,
 } from '@fluentui/react-components';
 import {
-  Add24Regular, ArrowLeft20Regular, ArrowRight20Regular, ChevronLeft20Regular, ChevronRight20Regular,
-  Delete20Regular, Dismiss20Regular, Save20Regular,
+  Add24Regular, ArrowLeft20Regular, ArrowRight20Regular, CheckmarkCircle16Filled, ChevronLeft20Regular,
+  ChevronRight20Regular, Delete20Regular, Dismiss20Regular, Save20Regular,
 } from '@fluentui/react-icons';
 import { Section } from '../../components/common';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -13,31 +13,35 @@ import { EquipmentRail } from '../../components/EquipmentRail';
 import { PhotoThumb } from '../../components/PhotoThumb';
 import { useCatalogs } from '../../lib/catalogs';
 import { supabase, must } from '../../lib/supabase';
-import { compressImage, logActivity, syncPhotoStatus } from '../../lib/services';
+import { compressImage, logActivity, photoStagesDone, syncPhotoStatus } from '../../lib/services';
 import { useNotify } from '../../lib/toast';
 import { STAGES, type Photo, type Stage } from '../../lib/types';
 import type { StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
-  grid: { display: 'grid', gridTemplateColumns: '260px 1fr', gap: '16px', alignItems: 'start' },
-  stage: { display: 'grid', gridTemplateColumns: '110px repeat(3, 1fr)', gap: '12px', alignItems: 'stretch', marginBottom: '16px' },
-  stageLabel: { display: 'flex', flexDirection: 'column', justifyContent: 'center' },
+  grid: { display: 'grid', gridTemplateColumns: '260px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
+  stage: { marginBottom: '20px' },
+  stageHead: { display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' },
+  // Tantas columnas como quepan: 4–5 en escritorio, 2 en celular
+  tiles: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr 1fr', gap: '8px' } },
   slot: {
     border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, padding: '6px',
     display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: tokens.colorNeutralBackground1, minWidth: 0,
   },
-  empty: {
-    border: `1px dashed ${tokens.colorNeutralStroke1}`, borderRadius: tokens.borderRadiusMedium, minHeight: '170px',
+  add: {
+    border: `1px dashed ${tokens.colorNeutralStroke1}`, borderRadius: tokens.borderRadiusMedium, minHeight: '150px',
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
     backgroundColor: tokens.colorNeutralBackground2, cursor: 'pointer', color: tokens.colorNeutralForeground3,
-    font: 'inherit',
+    font: 'inherit', padding: '8px', textAlign: 'center',
   },
   drop: { border: `2px dashed ${tokens.colorBrandStroke1}`, backgroundColor: tokens.colorBrandBackground2 },
   slotBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   thumbBtn: { padding: 0, border: 0, background: 'none', cursor: 'zoom-in', display: 'block', width: '100%' },
-  footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' },
-  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '16px' },
+  footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', gap: '8px', flexWrap: 'wrap' },
+  head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '16px', flexWrap: 'wrap' },
 });
+
+const byPosition = (a: Photo, b: Photo) => a.position - b.position;
 
 export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
   const s = useStyles();
@@ -55,29 +59,26 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
   const svc = bundle.service;
   const eq = bundle.equipment.find((e) => e.id === selId);
   const photosOf = (seId: string) => bundle.photos.filter((p) => p.service_equipment_id === seId);
-  const stagePhotos = (st: Stage) => photosOf(selId).filter((p) => p.stage === st).sort((a, b) => a.position - b.position);
-  const total = bundle.photos.length;
-  const expected = bundle.equipment.length * 9;
+  const stagePhotos = (seId: string, st: Stage) => photosOf(seId).filter((p) => p.stage === st).sort(byPosition);
+  const stagesDone = bundle.equipment.reduce((n, e) => n + photoStagesDone(bundle.photos, e.id), 0);
+  const stagesTotal = bundle.equipment.length * 3;
 
   const upload = async (stage: Stage, files: File[]) => {
-    const taken = new Set(stagePhotos(stage).map((p) => p.position));
-    const free = [1, 2, 3].filter((p) => !taken.has(p));
     const imgs = files.filter((f) => /^image\/(jpeg|png|webp|heic)$/.test(f.type));
     if (!imgs.length) return notify('Formato no admitido', 'warning', 'Usa archivos JPG o PNG.');
-    if (imgs.length > free.length) notify(`Solo hay ${free.length} espacio(s) libre(s) en esta etapa`, 'warning', 'Máximo 3 fotos por etapa.');
-    const batch = imgs.slice(0, free.length);
+    // Las nuevas fotos van al final de la etapa
+    const start = Math.max(0, ...stagePhotos(selId, stage).map((p) => p.position)) + 1;
     setUploading(stage);
-    setProgress({ done: 0, total: batch.length });
+    setProgress({ done: 0, total: imgs.length });
     try {
-      // En paralelo: comprimir + subir + registrar cada foto en su posición libre
       const results = await Promise.allSettled(
-        batch.map(async (file, i) => {
+        imgs.map(async (file, i) => {
           const blob = await compressImage(file);
           const path = `${svc.id}/${selId}/${crypto.randomUUID()}.jpg`;
           const up = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
           if (up.error) throw new Error(up.error.message);
           const caption = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
-          const ins = await supabase.from('photos').insert({ service_equipment_id: selId, stage, position: free[i], storage_path: path, caption });
+          const ins = await supabase.from('photos').insert({ service_equipment_id: selId, stage, position: start + i, storage_path: path, caption });
           if (ins.error) {
             await supabase.storage.from('photos').remove([path]);
             throw new Error(ins.error.message);
@@ -87,7 +88,7 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
       );
       const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
       if (failed.length) notify(`${failed.length} foto(s) no se pudieron subir`, 'error', failed[0].reason?.message);
-      await logActivity(svc.id, `subió fotos (${stage}) de ${eq?.code}`);
+      await logActivity(svc.id, `subió ${imgs.length - failed.length} foto(s) (${stage}) de ${eq?.code}`);
       await syncPhotoStatus(svc.id);
       await reload();
     } catch (e: any) {
@@ -97,12 +98,22 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
     }
   };
 
-  /** Mueve la foto a otra posición/etapa; si está ocupada, intercambia. */
+  /** Guarda el orden 1..n de una etapa (solo las filas que cambian). */
+  const persistOrder = async (list: Photo[], stage: Stage) => {
+    await Promise.all(
+      list.map((p, i) => (p.position !== i + 1 || p.stage !== stage
+        ? supabase.from('photos').update({ position: i + 1, stage }).eq('id', p.id)
+        : null)),
+    );
+  };
+
+  /** Mueve la foto a otra etapa y/o posición, renumerando las etapas afectadas. */
   const move = async (p: Photo, stage: Stage, position: number) => {
     if (p.stage === stage && p.position === position) return;
-    const other = photosOf(p.service_equipment_id).find((x) => x.stage === stage && x.position === position);
-    if (other) must(await supabase.from('photos').update({ stage: p.stage, position: p.position }).eq('id', other.id));
-    must(await supabase.from('photos').update({ stage, position }).eq('id', p.id));
+    const dest = stagePhotos(p.service_equipment_id, stage).filter((x) => x.id !== p.id);
+    dest.splice(Math.min(Math.max(position - 1, 0), dest.length), 0, p);
+    await persistOrder(dest, stage);
+    if (p.stage !== stage) await persistOrder(stagePhotos(p.service_equipment_id, p.stage).filter((x) => x.id !== p.id), p.stage);
     await reload();
   };
 
@@ -110,6 +121,7 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
     const p = toDelete!;
     must(await supabase.from('photos').delete().eq('id', p.id));
     await supabase.storage.from('photos').remove([p.storage_path]);
+    await persistOrder(stagePhotos(p.service_equipment_id, p.stage).filter((x) => x.id !== p.id), p.stage);
     await logActivity(svc.id, `eliminó una foto de ${eq?.code}`);
     await syncPhotoStatus(svc.id);
     setToDelete(null);
@@ -131,70 +143,70 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
         <Section title="Equipos">
           <EquipmentRail equipment={bundle.equipment} selected={selId} onSelect={setSelId}
             right={(e) => {
-              const n = photosOf(e.id).length;
-              return <Caption1 style={{ color: n >= 9 ? tokens.colorPaletteGreenForeground1 : tokens.colorPaletteMarigoldForeground1 }}>{n}/9</Caption1>;
+              const done = photoStagesDone(bundle.photos, e.id) === 3;
+              return (
+                <Caption1 style={{ display: 'flex', alignItems: 'center', gap: 4, color: done ? tokens.colorPaletteGreenForeground1 : tokens.colorPaletteMarigoldForeground1 }}>
+                  {done && <CheckmarkCircle16Filled />}{photosOf(e.id).length} fotos
+                </Caption1>
+              );
             }} />
         </Section>
         <Section>
           <div className={s.head}>
             <div>
               <Text size={500} weight="semibold" block>Registro fotográfico</Text>
-              <Caption1>Sección 5 · por equipo y etapa · máximo 3 fotos por etapa</Caption1>
+              <Caption1>Sección 5 · por equipo y etapa · al menos 1 foto por etapa, sin límite máximo</Caption1>
             </div>
-            <div style={{ width: 220 }}>
-              <Caption1>{total} de {expected} fotos</Caption1>
-              <ProgressBar value={expected ? total / expected : 0} thickness="large" color={total >= expected ? 'success' : 'brand'} />
-            </div>
+            <Caption1>{bundle.photos.length} fotos · {stagesDone} de {stagesTotal} etapas con fotos</Caption1>
           </div>
           {eq && <Text weight="semibold" block style={{ marginBottom: 12 }}>{eq.code} · {cat.typeName(eq.equipment_type_id)}</Text>}
           {STAGES.map((st) => {
-            const list = stagePhotos(st.id);
+            const list = stagePhotos(selId, st.id);
+            const key = st.id;
             return (
               <div key={st.id} className={s.stage}>
-                <div className={s.stageLabel}>
+                <div className={s.stageHead}>
                   <Text weight="semibold">{st.label.toUpperCase()}</Text>
-                  <Caption1>{list.length} de 3</Caption1>
-                  {uploading === st.id && <Spinner size="tiny" label={`Subiendo ${progress.done + 1 > progress.total ? progress.total : progress.done + 1} de ${progress.total}…`} />}
+                  <Badge appearance="tint" color={list.length ? 'success' : 'warning'}>{list.length} {list.length === 1 ? 'foto' : 'fotos'}</Badge>
+                  {uploading === st.id && <Spinner size="tiny" label={`Subiendo ${Math.min(progress.done + 1, progress.total)} de ${progress.total}…`} />}
                 </div>
-                {[1, 2, 3].map((pos) => {
-                  const p = list.find((x) => x.position === pos);
-                  if (p) {
-                    return (
-                      <div key={pos} className={s.slot}>
-                        <button className={s.thumbBtn} onClick={() => setViewer(p)} aria-label={`Ver ${p.caption ?? 'foto'}`}>
-                          <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={130} />
-                        </button>
-                        <div className={s.slotBar}>
-                          <Tooltip content="Mover a la izquierda" relationship="label">
-                            <Button size="small" appearance="subtle" icon={<ChevronLeft20Regular />} disabled={readOnly || pos === 1} onClick={() => move(p, st.id, pos - 1)} />
-                          </Tooltip>
-                          <Caption1 truncate wrap={false} style={{ flex: 1, textAlign: 'center' }} title={p.caption ?? ''}>{p.caption || `Foto ${pos}`}</Caption1>
-                          <Tooltip content="Mover a la derecha" relationship="label">
-                            <Button size="small" appearance="subtle" icon={<ChevronRight20Regular />} disabled={readOnly || pos === 3} onClick={() => move(p, st.id, pos + 1)} />
-                          </Tooltip>
-                        </div>
+                <div className={s.tiles}>
+                  {list.map((p, i) => (
+                    <div key={p.id} className={s.slot}>
+                      <button className={s.thumbBtn} onClick={() => setViewer(p)} aria-label={`Ver ${p.caption ?? 'foto'}`}>
+                        <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} />
+                      </button>
+                      <div className={s.slotBar}>
+                        <Tooltip content="Mover antes" relationship="label">
+                          <Button size="small" appearance="subtle" icon={<ChevronLeft20Regular />} disabled={readOnly || i === 0} onClick={() => move(p, st.id, i)} />
+                        </Tooltip>
+                        <Caption1 truncate wrap={false} style={{ flex: 1, textAlign: 'center', minWidth: 0 }} title={p.caption ?? ''}>
+                          {i + 1}. {p.caption || 'Foto'}
+                        </Caption1>
+                        <Tooltip content="Mover después" relationship="label">
+                          <Button size="small" appearance="subtle" icon={<ChevronRight20Regular />} disabled={readOnly || i === list.length - 1} onClick={() => move(p, st.id, i + 2)} />
+                        </Tooltip>
                       </div>
-                    );
-                  }
-                  const key = `${st.id}-${pos}`;
-                  return (
-                    <button key={pos} disabled={readOnly || !!uploading}
-                      className={`${s.empty} ${dropOn === key ? s.drop : ''}`}
+                    </div>
+                  ))}
+                  {!readOnly && (
+                    <button disabled={!!uploading}
+                      className={mergeClasses(s.add, dropOn === key && s.drop)}
                       onClick={() => pick(st.id)}
                       onDragOver={(e) => { e.preventDefault(); setDropOn(key); }}
                       onDragLeave={() => setDropOn(null)}
                       onDrop={(e) => { e.preventDefault(); setDropOn(null); upload(st.id, [...e.dataTransfer.files]); }}>
                       <Add24Regular />
-                      <Text size={200}>Agregar foto</Text>
-                      <Caption1>o arrastra aquí</Caption1>
+                      <Text size={200}>Agregar fotos</Text>
+                      <Caption1>o arrastra aquí (varias a la vez)</Caption1>
                     </button>
-                  );
-                })}
+                  )}
+                </div>
               </div>
             );
           })}
           <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
-            En el informe cada etapa ocupa una fila con FOTO 1 · FOTO 2 · FOTO 3. Formatos JPG/PNG · se comprimen al subir.
+            En el informe cada etapa se muestra en filas de 3 fotos (FOTO 1 · FOTO 2 · FOTO 3…). Formatos JPG/PNG · se comprimen al subir.
           </Caption1>
         </Section>
       </div>
@@ -209,6 +221,7 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
         <PhotoViewer
           photo={viewer}
           photos={photosOf(viewer.service_equipment_id).sort((a, b) => STAGES.findIndex((x) => x.id === a.stage) - STAGES.findIndex((x) => x.id === b.stage) || a.position - b.position)}
+          stageCount={(st) => stagePhotos(viewer.service_equipment_id, st).length}
           code={eq?.code ?? ''}
           readOnly={readOnly}
           onNavigate={setViewer}
@@ -230,16 +243,20 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
   );
 }
 
-function PhotoViewer({ photo, photos, code, readOnly, onNavigate, onClose, onDelete, onSave }: {
-  photo: Photo; photos: Photo[]; code: string; readOnly: boolean; onNavigate: (p: Photo) => void; onClose: () => void;
-  onDelete: () => void; onSave: (caption: string, stage: Stage, position: number) => Promise<void>;
+function PhotoViewer({ photo, photos, stageCount, code, readOnly, onNavigate, onClose, onDelete, onSave }: {
+  photo: Photo; photos: Photo[]; stageCount: (st: Stage) => number; code: string; readOnly: boolean;
+  onNavigate: (p: Photo) => void; onClose: () => void; onDelete: () => void;
+  onSave: (caption: string, stage: Stage, position: number) => Promise<void>;
 }) {
   const [caption, setCaption] = useState(photo.caption ?? '');
   const [stage, setStage] = useState<Stage>(photo.stage);
   const [position, setPosition] = useState(photo.position);
   const [busy, setBusy] = useState(false);
   const idx = photos.findIndex((p) => p.id === photo.id);
+  const inStage = photos.filter((p) => p.stage === photo.stage);
   const stageLabel = STAGES.find((x) => x.id === photo.stage)?.label;
+  // Si cambia de etapa puede ir al final de la nueva (n + 1)
+  const maxPos = stage === photo.stage ? stageCount(stage) : stageCount(stage) + 1;
 
   const go = (p?: Photo) => {
     if (!p) return;
@@ -251,10 +268,10 @@ function PhotoViewer({ photo, photos, code, readOnly, onNavigate, onClose, onDel
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 920, width: '90vw' }}>
+      <DialogSurface style={{ maxWidth: 920, width: '92vw' }}>
         <DialogBody>
           <DialogTitle action={<Button appearance="subtle" icon={<Dismiss20Regular />} aria-label="Cerrar" onClick={onClose} />}>
-            {code} · {stageLabel} · Foto {photo.position} de 3
+            {code} · {stageLabel} · Foto {inStage.findIndex((p) => p.id === photo.id) + 1} de {inStage.length}
           </DialogTitle>
           <DialogContent>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 8 }}>
@@ -262,18 +279,23 @@ function PhotoViewer({ photo, photos, code, readOnly, onNavigate, onClose, onDel
               <PhotoThumb path={photo.storage_path} alt={photo.caption ?? ''} height="52vh" fit="contain" />
               <Button icon={<ChevronRight20Regular />} disabled={idx >= photos.length - 1} onClick={() => go(photos[idx + 1])} aria-label="Siguiente" />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginTop: 16 }}>
+            <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginTop: 16 }}>
               <Field label="Pie de foto / comentario">
                 <Input value={caption} disabled={readOnly} onChange={(_, d) => setCaption(d.value)} />
               </Field>
               <Field label="Etapa">
-                <Dropdown disabled={readOnly} value={STAGES.find((x) => x.id === stage)?.label} selectedOptions={[stage]} onOptionSelect={(_, d) => setStage(d.optionValue as Stage)}>
+                <Dropdown disabled={readOnly} value={STAGES.find((x) => x.id === stage)?.label} selectedOptions={[stage]}
+                  onOptionSelect={(_, d) => {
+                    const st = d.optionValue as Stage;
+                    setStage(st);
+                    setPosition(st === photo.stage ? photo.position : stageCount(st) + 1);
+                  }}>
                   {STAGES.map((x) => <Option key={x.id} value={x.id}>{x.label}</Option>)}
                 </Dropdown>
               </Field>
               <Field label="Posición">
                 <Dropdown disabled={readOnly} value={String(position)} selectedOptions={[String(position)]} onOptionSelect={(_, d) => setPosition(Number(d.optionValue))}>
-                  {[1, 2, 3].map((n) => <Option key={n} value={String(n)}>{String(n)}</Option>)}
+                  {Array.from({ length: Math.max(1, maxPos) }, (_, i) => i + 1).map((n) => <Option key={n} value={String(n)}>{String(n)}</Option>)}
                 </Dropdown>
               </Field>
             </div>

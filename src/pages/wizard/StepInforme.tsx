@@ -15,6 +15,7 @@ import { useRouter } from '../../lib/router';
 import { desktop } from '../../lib/desktop';
 import { today, fmtSize } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
+import { photoStagesDone } from '../../lib/services';
 import type { Report } from '../../lib/types';
 import { buildReportModel, type ReportModel } from '../../report/model';
 import { renderReportHtml } from '../../report/html';
@@ -22,7 +23,7 @@ import { generateReport, openReportFile, printReportHtml, saveReportFile, type O
 import type { StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
-  grid: { display: 'grid', gridTemplateColumns: '420px 1fr', gap: '16px', alignItems: 'start' },
+  grid: { display: 'grid', gridTemplateColumns: '420px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   col: { display: 'flex', flexDirection: 'column', gap: '16px' },
   secRow: { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '6px 0', borderBottom: `1px solid ${tokens.colorNeutralStroke3}` },
   preview: { width: '100%', height: 'calc(100vh - 330px)', minHeight: '480px', border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, backgroundColor: '#e8e8e8' },
@@ -69,12 +70,12 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
   // Validación previa (RF-04): checklist completo, fotos y hallazgos para cada "No conforme"
   const eqs = bundle.equipment;
   const checklistOk = eqs.filter((e) => e.final_status !== 'Pendiente').length;
-  const expectedPhotos = eqs.length * 9;
+  const stagesOk = eqs.reduce((n, e) => n + photoStagesDone(bundle.photos, e.id), 0);
   const ncWithout = bundle.results.filter((r) => r.result === 'NC' && !bundle.findings.some((f) => f.service_equipment_id === r.service_equipment_id && f.template_item_id === r.template_item_id)).length;
   const issues = [
     !eqs.length && 'el servicio no tiene equipos',
     checklistOk < eqs.length && `checklist completo en ${checklistOk} de ${eqs.length} equipos`,
-    bundle.photos.length < expectedPhotos && `${bundle.photos.length} de ${expectedPhotos} fotos`,
+    stagesOk < eqs.length * 3 && `${eqs.length * 3 - stagesOk} etapa(s) sin fotografías`,
     ncWithout > 0 && `${ncWithout} actividad(es) “No conforme” sin hallazgo`,
   ].filter(Boolean) as string[];
 
@@ -87,7 +88,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
     ['detalles', '2. Detalles previos', `${svc.prev_details.length} detalles + resumen de equipos`],
     ['equipos', '3. Lista de equipos', `${eqs.length} equipos`],
     ['checklist', '4. Checklist de mantenimiento', `${activities} actividades · ${ncCount} No conforme`],
-    ['fotos', '5. Registro fotográfico', `${eqs.length * 3} filas · ${bundle.photos.length} fotos`],
+    ['fotos', '5. Registro fotográfico', `${model?.equipment.reduce((n, e) => n + e.photos.reduce((k, st) => k + st.rows.length, 0), 0) ?? '…'} filas · ${bundle.photos.length} fotos`],
     ['hallazgos', '6. Hallazgos y deficiencias', `${bundle.findings.length} hallazgos${highs ? ` · ${highs} prioridad Alta` : ''}`],
     ['conclusiones', '7. Conclusiones y recomendaciones', `${model?.conclusions.length ?? 0} conclusiones · ${model?.recommendations.length ?? 0} recomendaciones`],
   ];
@@ -159,7 +160,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
               <MessageBarBody>
                 {issues.length
                   ? `Revisa antes de generar: ${issues.join(', ')}. Puedes generar igualmente un borrador.`
-                  : `Validación completa: checklist en ${eqs.length} de ${eqs.length} equipos, ${bundle.photos.length} de ${expectedPhotos} fotos y hallazgos registrados para cada “No conforme”.`}
+                  : `Validación completa: checklist en ${eqs.length} de ${eqs.length} equipos, ${bundle.photos.length} fotos con las 3 etapas cubiertas y hallazgos registrados para cada “No conforme”.`}
               </MessageBarBody>
             </MessageBar>
           </Section>

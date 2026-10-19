@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Badge, Button, MessageBar, MessageBarBody, Tab, TabList, makeStyles, tokens,
 } from '@fluentui/react-components';
@@ -7,7 +7,7 @@ import { PageHeader, Loading, ErrorBar } from '../../components/common';
 import { useAuth } from '../../lib/auth';
 import { useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
-import { loadServiceBundle, type ServiceBundle } from '../../lib/services';
+import { loadServiceBundle, photoStagesDone, type ServiceBundle } from '../../lib/services';
 import { useServicePresence } from '../../lib/presence';
 import { StepDatos } from './StepDatos';
 import { StepEquipos } from './StepEquipos';
@@ -21,7 +21,7 @@ const STEPS = ['Datos del servicio', 'Equipos', 'Checklist', 'Fotografías', 'Ha
 const useStyles = makeStyles({
   steps: {
     backgroundColor: tokens.colorNeutralBackground1, borderRadius: tokens.borderRadiusLarge,
-    boxShadow: tokens.shadow4, padding: '4px 8px', marginBottom: '16px',
+    boxShadow: tokens.shadow4, padding: '4px 8px', marginBottom: '16px', overflowX: 'auto',
   },
   num: {
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px',
@@ -69,6 +69,11 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
   }, [reload, step]);
 
   const others = useServicePresence(serviceId, true);
+  // En pantallas angostas la barra de pasos se desplaza hasta el paso actual
+  const stepsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    stepsRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [step, freshFor]);
   const register = useCallback((h: SaveHandler | null) => setSaveHandler(() => h), []);
 
   const goTo = async (n: number) => {
@@ -90,7 +95,7 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
       case 1: return true;
       case 2: return eq.length > 0;
       case 3: return eq.length > 0 && eq.every((e) => e.final_status !== 'Pendiente');
-      case 4: return eq.length > 0 && eq.every((e) => bundle.photos.filter((p) => p.service_equipment_id === e.id).length >= 9);
+      case 4: return eq.length > 0 && eq.every((e) => photoStagesDone(bundle.photos, e.id) === 3);
       case 5: return eq.length > 0 && (bundle.findings.length > 0 || eq.every((e) => e.final_status === 'Conforme'));
       case 6: return bundle.reports.length > 0;
     }
@@ -144,7 +149,7 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
           </MessageBarBody>
         </MessageBar>
       )}
-      <div className={s.steps}>
+      <div className={s.steps} ref={stepsRef}>
         <TabList selectedValue={step} onTabSelect={(_, d) => goTo(d.value as number)} disabled={!serviceId}>
           {STEPS.map((label, i) => {
             const n = i + 1;

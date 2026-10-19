@@ -135,12 +135,17 @@ export function equipmentLabel(e: Pick<ServiceEquipment, 'capacity' | 'unit'>) {
   return [e.capacity, e.unit].filter(Boolean).join(' ');
 }
 
-/** "Fotos pendientes" si algún equipo no tiene sus 9 fotos (3 por etapa); no toca servicios ya informados. */
+/** Un equipo tiene el registro fotográfico completo cuando cada etapa (antes/durante/después) tiene al menos 1 foto. */
+export function photoStagesDone(photos: Pick<Photo, 'service_equipment_id' | 'stage'>[], seId: string) {
+  return new Set(photos.filter((p) => p.service_equipment_id === seId).map((p) => p.stage)).size;
+}
+
+/** "Fotos pendientes" si algún equipo no tiene fotos en las 3 etapas; no toca servicios ya informados. */
 export async function syncPhotoStatus(serviceId: string) {
   const { data: svc } = await supabase.from('services').select('status').eq('id', serviceId).single();
   if (!svc || svc.status === 'Informe generado') return;
-  const { data: eqs } = await supabase.from('service_equipment').select('id, photos(count)').eq('service_id', serviceId);
-  const incomplete = (eqs ?? []).some((e: any) => (e.photos?.[0]?.count ?? 0) < 9);
+  const { data: eqs } = await supabase.from('service_equipment').select('id, photos(stage)').eq('service_id', serviceId);
+  const incomplete = (eqs ?? []).some((e: any) => new Set((e.photos ?? []).map((p: any) => p.stage)).size < 3);
   const status = incomplete ? 'Fotos pendientes' : 'En registro';
   if (status !== svc.status) await supabase.from('services').update({ status }).eq('id', serviceId);
 }

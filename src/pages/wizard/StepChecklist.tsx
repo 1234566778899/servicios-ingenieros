@@ -15,10 +15,10 @@ import type { ChecklistResult, Finding } from '../../lib/types';
 import type { StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
-  grid: { display: 'grid', gridTemplateColumns: '260px 1fr', gap: '16px', alignItems: 'start' },
+  grid: { display: 'grid', gridTemplateColumns: '260px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' },
   counters: { display: 'flex', gap: '8px', marginTop: '6px' },
-  bottom: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' },
+  bottom: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' },
 });
 

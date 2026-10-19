@@ -6,18 +6,21 @@ import {
 import { useRouter } from '../lib/router';
 
 const useStyles = makeStyles({
-  header: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '16px', marginBottom: '16px' },
+  header: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px 16px', marginBottom: '16px', flexWrap: 'wrap' },
   titleBlock: { display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 },
   titleRow: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' },
-  actions: { display: 'flex', gap: '8px', flexShrink: 0 },
+  actions: { display: 'flex', gap: '8px', flexShrink: 0, flexWrap: 'wrap' },
   center: { display: 'flex', justifyContent: 'center', padding: '48px' },
   section: {
     backgroundColor: tokens.colorNeutralBackground1,
     borderRadius: tokens.borderRadiusLarge,
     boxShadow: tokens.shadow4,
     padding: '16px 20px',
+    overflowX: 'auto',
+    minWidth: 0,
+    '@media (max-width: 600px)': { padding: '12px' },
   },
-  sectionHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' },
+  sectionHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '8px 12px', flexWrap: 'wrap' },
 });
 
 export interface Crumb { label: string; to?: string }

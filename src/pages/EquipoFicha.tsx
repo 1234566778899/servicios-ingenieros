@@ -16,7 +16,7 @@ import { useNotify } from '../lib/toast';
 import type { ChecklistResult, ServiceEquipment, TemplateItem } from '../lib/types';
 
 const useStyles = makeStyles({
-  grid: { display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', alignItems: 'start' },
+  grid: { display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   col: { display: 'flex', flexDirection: 'column', gap: '16px' },
   kv: { display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px 12px' },
 });

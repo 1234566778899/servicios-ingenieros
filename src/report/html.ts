@@ -21,7 +21,8 @@ const CSS = `
   .cover .meta { font-size: 11pt; }
   .kv td:first-child { width: 32%; font-weight: bold; background: #f3f3f3; }
   .ph td { text-align: center; vertical-align: middle; width: 30%; height: 52mm; }
-  .ph td:first-child { width: 10%; font-weight: bold; background: #f3f3f3; }
+  .ph td[rowspan] { width: 10%; font-weight: bold; background: #f3f3f3; }
+  .ph tr { page-break-inside: avoid; }
   .ph img { max-width: 100%; max-height: 46mm; display: block; margin: 0 auto 2px; }
   .ph .cap { font-size: 7.5pt; color: #444; }
   .nc { color: #b00020; font-weight: bold; }
@@ -102,9 +103,9 @@ export function renderReportHtml(m: ReportModel) {
         <h3>${esc(e.code)} · ${esc(e.type)} ${esc(e.capacity)}</h3>
         <table class="ph">
           <tr><th>Etapa</th><th>Foto 1</th><th>Foto 2</th><th>Foto 3</th></tr>
-          ${e.photos.map((r) => `<tr><td>${r.stage}</td>${r.images.map((img) => img
+          ${e.photos.map((st) => st.rows.map((row, ri) => `<tr>${ri === 0 ? `<td rowspan="${st.rows.length}">${st.stage}</td>` : ''}${row.map((img) => img
             ? `<td><img src="${img.dataUrl}"/><div class="cap">${esc(img.caption)}</div></td>`
-            : '<td class="cap">—</td>').join('')}</tr>`).join('')}
+            : '<td class="cap">—</td>').join('')}</tr>`).join('')).join('')}
         </table>`));
     });
   }

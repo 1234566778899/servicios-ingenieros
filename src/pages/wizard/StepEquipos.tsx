@@ -226,7 +226,7 @@ function PickExisting({ open, siteId, exclude, onAdd, onClose }: {
           <DialogTitle>Agregar equipo existente</DialogTitle>
           <DialogContent>
             <Caption1 block>Busca equipos ya registrados para reutilizarlos en este servicio.</Caption1>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px 180px', gap: 8, marginTop: 12 }}>
+            <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 200px 180px', gap: 8, marginTop: 12 }}>
               <Field label="Buscar"><Input contentBefore={<Search20Regular />} placeholder="Código, serie o nombre…" value={q} onChange={(_, d) => setQ(d.value)} /></Field>
               <Field label="Tienda / Sede">
                 <Dropdown value={cat.siteName(site)} selectedOptions={[site]} style={{ minWidth: 0 }}

@@ -13,9 +13,9 @@ import { fmtDate, shortType, timeAgo } from '../lib/format';
 import type { Service } from '../lib/types';
 
 const useStyles = makeStyles({
-  kpis: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px' },
+  kpis: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' } },
   kpi: { display: 'flex', flexDirection: 'column', gap: '2px' },
-  grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start' },
+  grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   col: { display: 'flex', flexDirection: 'column', gap: '16px' },
   chart: { display: 'flex', alignItems: 'flex-end', gap: '6px', height: '140px', paddingTop: '8px' },
   bar: { flex: 1, borderRadius: '3px 3px 0 0', minHeight: '2px' },

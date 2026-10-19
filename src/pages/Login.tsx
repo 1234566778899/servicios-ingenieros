@@ -12,13 +12,14 @@ import { supabase } from '../lib/supabase';
 const REMEMBER_KEY = 'nordico.rememberedUser';
 
 const useStyles = makeStyles({
-  root: { display: 'grid', gridTemplateColumns: '1fr 1fr', height: '100vh' },
+  root: { display: 'grid', gridTemplateColumns: '1fr 1fr', height: '100dvh', overflowY: 'auto', '@media (max-width: 800px)': { gridTemplateColumns: '1fr', gridTemplateRows: 'auto 1fr' } },
   brand: {
     backgroundColor: '#16233a', color: tokens.colorNeutralForegroundOnBrand,
     display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '64px', gap: '16px',
+    '@media (max-width: 800px)': { padding: '24px 20px' },
   },
-  side: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: tokens.colorNeutralBackground2 },
-  card: { width: '400px', padding: '28px', display: 'flex', flexDirection: 'column', gap: '16px' },
+  side: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: tokens.colorNeutralBackground2, padding: '16px' },
+  card: { width: '400px', maxWidth: '100%', padding: '28px', display: 'flex', flexDirection: 'column', gap: '16px', '@media (max-width: 600px)': { padding: '20px' } },
   row: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   footer: { marginTop: '16px', display: 'flex', alignItems: 'center', gap: '6px', color: tokens.colorNeutralForeground3 },
 });
@@ -73,14 +74,14 @@ export function Login() {
   return (
     <div className={s.root}>
       <div className={s.brand}>
-        <img src={logoWhite} alt="Nórdico Ingenieros — Servicios de Infraestructura" style={{ width: 380, maxWidth: '100%' }} />
+        <img src={logoWhite} alt="Nórdico Ingenieros — Servicios de Infraestructura" style={{ width: 380, maxWidth: '80%' }} />
         <Subtitle1 style={{ fontWeight: 400, maxWidth: 440 }}>
           Elaboración de informes técnicos de servicios: registra el servicio, sus equipos y fotografías, y genera el
           informe en Word o PDF.
         </Subtitle1>
       </div>
       <div className={s.side}>
-        <form onSubmit={submit}>
+        <form onSubmit={submit} style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
         <Card className={s.card}>
           <div>
             <Title1 as="h1" style={{ fontSize: 24 }}>Iniciar sesión</Title1>

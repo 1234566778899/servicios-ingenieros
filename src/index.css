@@ -1,3 +1,15 @@
 html, body, #root { margin: 0; height: 100%; }
 body { overflow: hidden; }
 * { box-sizing: border-box; }
+
+/* ── Responsive ───────────────────────────────────────────── */
+/* En pantallas angostas las tablas toman su ancho natural (sin partir texto)
+   y se desplazan horizontalmente dentro de su tarjeta */
+@media (max-width: 1000px) {
+  .fui-Table { table-layout: auto !important; width: max-content !important; min-width: 100%; }
+  .fui-TableHeaderCell, .fui-TableCell { white-space: nowrap; width: auto !important; }
+  .fui-TableCell:has(textarea), .fui-TableCell .fui-Caption1 { white-space: normal; min-width: 180px; }
+}
+@media (max-width: 600px) {
+  .r-stack-sm { grid-template-columns: 1fr !important; }
+}

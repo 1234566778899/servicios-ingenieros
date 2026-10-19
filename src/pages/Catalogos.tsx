@@ -20,11 +20,11 @@ import { useNotify } from '../lib/toast';
 import type { CatalogFinding, ChecklistTemplate, Priority, Site, TemplateItem } from '../lib/types';
 
 const useStyles = makeStyles({
-  grid: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', alignItems: 'start' },
+  grid: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' },
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', gap: '12px' },
-  form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' },
-  span2: { gridColumn: 'span 2' },
+  form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
   filters: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '12px', flexWrap: 'wrap' },
 });
 

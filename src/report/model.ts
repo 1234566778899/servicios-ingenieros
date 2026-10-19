@@ -23,7 +23,8 @@ export interface ReportModel {
   equipment: {
     n: number; code: string; type: string; capacity: string; brandModel: string; serial: string; status: string; observation: string;
     checklist: { n: number; category: string; activity: string; result: string; value: string }[];
-    photos: { stage: string; images: (ReportImage | null)[] }[];
+    /** Cada etapa en filas de 3 (la última se completa con null) */
+    photos: { stage: string; rows: (ReportImage | null)[][] }[];
   }[];
   findings: { n: number; code: string; finding: string; cause: string; action: string; recommendation: string; priority: string }[];
   conclusions: string[];
@@ -70,18 +71,22 @@ export async function buildReportModel(
       const items = e.checklist_template_id ? b.items[e.checklist_template_id] ?? [] : [];
       const res = b.results.filter((r) => r.service_equipment_id === e.id);
       const photos = await Promise.all(
-        STAGES.map(async (st) => ({
-          stage: st.label.toUpperCase(),
-          images: await Promise.all(
-            [1, 2, 3].map(async (pos) => {
-              const p = b.photos.find((x) => x.service_equipment_id === e.id && x.stage === st.id && x.position === pos);
-              if (!p) return null;
+        STAGES.map(async (st) => {
+          const list = b.photos.filter((x) => x.service_equipment_id === e.id && x.stage === st.id).sort((x, y) => x.position - y.position);
+          const images = await Promise.all(
+            list.map(async (p) => {
               const img = await loadImage(p.storage_path, p.caption ?? '');
               onProgress?.(++done, total);
               return img;
             }),
-          ),
-        })),
+          );
+          const rows: (ReportImage | null)[][] = [];
+          for (let i = 0; i < Math.max(images.length, 1); i += 3) {
+            const row = images.slice(i, i + 3);
+            rows.push([...row, ...Array(3 - row.length).fill(null)]);
+          }
+          return { stage: st.label.toUpperCase(), rows };
+        }),
       );
       return {
         n: e.position,
