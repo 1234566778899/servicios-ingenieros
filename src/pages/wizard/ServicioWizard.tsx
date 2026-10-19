@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Badge, Button, MessageBar, MessageBarBody, ProgressBar, Tab, TabList, makeStyles, tokens,
+  Badge, Button, MessageBar, MessageBarBody, ProgressBar, Spinner, Tab, TabList, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Checkmark16Filled, Save20Regular } from '@fluentui/react-icons';
 import { PageHeader, Loading, ErrorBar } from '../../components/common';
@@ -33,7 +33,7 @@ export interface StepProps {
   bundle: ServiceBundle;
   reload: () => Promise<void>;
   readOnly: boolean;
-  goTo: (step: number) => void;
+  goTo: (step: number, before?: () => Promise<unknown>) => Promise<void>;
 }
 
 /** Guarda borrador: cada paso registra aquí su función de guardado pendiente. */
@@ -78,10 +78,11 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
   const register = useCallback((h: SaveHandler | null) => setSaveHandler(() => h), []);
 
   /** Guarda el paso actual, trae los datos al día (cambios de otros usuarios) y recién entonces cambia de paso. */
-  const goTo = async (n: number) => {
+  const goTo = async (n: number, before?: () => Promise<unknown>) => {
     if (!serviceId || pending) return;
     setPending(n);
     try {
+      await before?.();
       if (saveHandler && !(await saveHandler())) return;
       await reload();
       navigate(`/servicios/${serviceId}/editar?paso=${n}`);
@@ -123,8 +124,8 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
             <Button onClick={() => navigate(svc ? `/servicios/${svc.id}` : '/servicios')}>{svc ? 'Cerrar' : 'Cancelar'}</Button>
             {!readOnly && saveHandler && (
               <Button
-                icon={<Save20Regular />}
-                disabled={saving}
+                icon={saving ? <Spinner size="tiny" /> : <Save20Regular />}
+                disabled={saving || !!pending}
                 onClick={async () => {
                   setSaving(true);
                   try {
@@ -156,7 +157,7 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
         </MessageBar>
       )}
       <div className={s.steps} ref={stepsRef}>
-        <TabList selectedValue={step} onTabSelect={(_, d) => goTo(d.value as number)} disabled={!serviceId}>
+        <TabList selectedValue={step} onTabSelect={(_, d) => goTo(d.value as number)} disabled={!serviceId || !!pending}>
           {STEPS.map((label, i) => {
             const n = i + 1;
             const ok = n !== step && done(n);

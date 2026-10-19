@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Button, Caption1, Card, CardHeader, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface,
   DialogTitle, Dropdown, Field, Input, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarBody,
-  Option, Tab, TabList, Text, Textarea, makeStyles, tokens,
+  Option, Spinner, Tab, TabList, Text, Textarea, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Add20Regular, MoreHorizontal20Regular } from '@fluentui/react-icons';
 import { PageHeader, StatusBadge } from '../components/common';
@@ -77,6 +77,7 @@ export function Plantillas() {
           Plantilla base del cliente: formato F-SGC-100-01. Cada plantilla define qué secciones se incluyen en el informe y su versión de emisión.
         </MessageBarBody>
       </MessageBar>
+      {cat.loading && <Spinner style={{ padding: 24 }} />}
       <div className={s.grid}>
         {cat.reportTemplates.map((t) => (
           <Card key={t.id}>

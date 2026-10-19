@@ -8,6 +8,8 @@ interface Catalogs {
   equipmentTypes: EquipmentType[];
   users: Profile[];
   reportTemplates: ReportTemplate[];
+  /** true hasta que termina la primera carga */
+  loading: boolean;
   reload: () => Promise<void>;
   clientName: (id?: string | null) => string;
   siteName: (id?: string | null) => string;
@@ -23,6 +25,7 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
   const [equipmentTypes, setTypes] = useState<EquipmentType[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [reportTemplates, setTemplates] = useState<ReportTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
     const [c, s, t, u, r] = await Promise.all([
@@ -37,6 +40,7 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
     setTypes(t.data ?? []);
     setUsers(u.data ?? []);
     setTemplates(r.data ?? []);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -49,7 +53,7 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider
       value={{
-        clients, sites, equipmentTypes, users, reportTemplates, reload,
+        clients, sites, equipmentTypes, users, reportTemplates, loading, reload,
         clientName: by(clients, 'name'),
         siteName: by(sites, 'name'),
         typeName: by(equipmentTypes, 'name'),

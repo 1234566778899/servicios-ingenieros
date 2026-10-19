@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Button, Caption1, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field,
   Input, Link, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarBody, Option, Radio,
-  RadioGroup, Switch, Tab, TabList, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text,
+  RadioGroup, Spinner, Switch, Tab, TabList, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text,
   Textarea, makeStyles, tokens,
 } from '@fluentui/react-components';
 import {
@@ -76,7 +76,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
   const current = versions.find((t) => t.is_current) ?? versions[0];
   const shown = versions.find((t) => t.id === viewVersion) ?? current;
 
-  const { data: loaded } = useAsync(async () => {
+  const { data: loaded, loading: itemsLoading } = useAsync(async () => {
     if (!shown) return { items: [] as TemplateItem[], uses: 0 };
     const [its, uses] = await Promise.all([
       supabase.from('checklist_template_items').select('*').eq('template_id', shown.id).order('position'),
@@ -135,11 +135,13 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
       <Section title="Tipos de equipo" subtitle={String(cat.equipmentTypes.length)}
         actions={admin && <Button size="small" icon={<Add20Regular />} aria-label="Nuevo tipo de equipo" onClick={() => setNewType({ name: '', unit: '' })} />}>
         <Input size="small" contentBefore={<Search20Regular />} placeholder="Buscar tipo de equipo…" value={q} onChange={(_, d) => setQ(d.value)} style={{ width: '100%', marginBottom: 8 }} />
-        <EquipmentRail equipment={typeRail} selected={typeId} onSelect={(id) => { setTypeId(id); setViewVersion(null); }} sub={() => null}
-          right={(e) => {
-            const v = (data ?? []).find((t) => t.equipment_type_id === e.id && t.is_current);
-            return <Caption1>{v ? `${v.checklist_template_items[0]?.count ?? 0} act. · v${v.version}` : 'Sin plantilla'}</Caption1>;
-          }} />
+        {cat.loading ? <Spinner size="small" style={{ padding: 16 }} /> : (
+          <EquipmentRail equipment={typeRail} selected={typeId} onSelect={(id) => { setTypeId(id); setViewVersion(null); }} sub={() => null}
+            right={(e) => {
+              const v = (data ?? []).find((t) => t.equipment_type_id === e.id && t.is_current);
+              return <Caption1>{v ? `${v.checklist_template_items[0]?.count ?? 0} act. · v${v.version}` : 'Sin plantilla'}</Caption1>;
+            }} />
+        )}
       </Section>
 
       <Section>
@@ -194,7 +196,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map((it, i) => (
+            {!itemsLoading && items.map((it, i) => (
               <TableRow key={it.id ?? `new-${i}`}>
                 <TableCell>
                   <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Subir" disabled={!editable || i === 0} onClick={() => move(i, -1)} />
@@ -222,6 +224,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
             ))}
           </TableBody>
         </Table>
+        {(!data || itemsLoading) && <Spinner style={{ padding: 24 }} />}
         {editable && (
           <div className={s.footer}>
             <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
@@ -270,7 +273,7 @@ function FindingsCatalog({ admin }: { admin: boolean }) {
   const [draft, setDraft] = useState<Partial<CatalogFinding> | null>(null);
   const [toDelete, setToDelete] = useState<CatalogFinding | null>(null);
 
-  const { data, error, reload } = useAsync(async () => {
+  const { data, error, loading, reload } = useAsync(async () => {
     const [list, uses] = await Promise.all([
       supabase.from('findings_catalog').select('*').order('code'),
       supabase.from('findings').select('catalog_id'),
@@ -350,6 +353,7 @@ function FindingsCatalog({ admin }: { admin: boolean }) {
           ))}
         </TableBody>
       </Table>
+      {loading && !data && <Spinner style={{ padding: 24 }} />}
       <Caption1 block style={{ marginTop: 12, color: tokens.colorNeutralForeground3 }}>
         Estos textos alimentan automáticamente las secciones 6 (Hallazgos) y 7 (Conclusiones y recomendaciones) del informe.
       </Caption1>
@@ -437,8 +441,10 @@ function ClientsSites({ admin }: { admin: boolean }) {
   return (
     <div className={s.grid}>
       <Section title="Clientes" actions={admin && <Button size="small" icon={<Add20Regular />} aria-label="Nuevo cliente" onClick={() => setNewClient('')} />}>
-        <EquipmentRail equipment={clientRail} selected={clientId} onSelect={setClientId} sub={() => null}
-          right={(c) => <Caption1>{cat.sites.filter((x) => x.client_id === c.id).length} sedes</Caption1>} />
+        {cat.loading ? <Spinner size="small" style={{ padding: 16 }} /> : (
+          <EquipmentRail equipment={clientRail} selected={clientId} onSelect={setClientId} sub={() => null}
+            right={(c) => <Caption1>{cat.sites.filter((x) => x.client_id === c.id).length} sedes</Caption1>} />
+        )}
       </Section>
       <Section title={`Sedes de ${cat.clientName(clientId)}`}
         actions={admin && clientId && <Button appearance="primary" icon={<Add20Regular />} onClick={() => setSite({})}>Nueva sede</Button>}>
@@ -466,6 +472,7 @@ function ClientsSites({ admin }: { admin: boolean }) {
             ))}
           </TableBody>
         </Table>
+        {cat.loading && <Spinner style={{ padding: 24 }} />}
       </Section>
 
       <Dialog open={newClient !== null} onOpenChange={(_, d) => !d.open && setNewClient(null)}>

@@ -1,5 +1,5 @@
 import {
-  Avatar, Button, Caption1, Link, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text,
+  Avatar, Button, Caption1, Link, Skeleton, SkeletonItem, Spinner, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text,
   Title1, makeStyles, tokens, Tooltip,
 } from '@fluentui/react-components';
 import { Add20Regular, History20Regular } from '@fluentui/react-icons';
@@ -33,7 +33,7 @@ export function Inicio() {
   const { navigate } = useRouter();
   const cat = useCatalogs();
 
-  const { data, error } = useAsync(async () => {
+  const { data, error, loading } = useAsync(async () => {
     cat.reload();
     const since = new Date(Date.now() - 84 * 86400_000).toISOString();
     const [stats, recent, reports, activity] = await Promise.all([
@@ -95,7 +95,9 @@ export function Inicio() {
           <Section key={k.label}>
             <div className={s.kpi}>
               <Caption1>{k.label}</Caption1>
-              <Title1>{k.value ?? '—'}</Title1>
+              {loading && !data
+                ? <Skeleton aria-label="Cargando"><SkeletonItem size={40} style={{ width: 64, margin: '2px 0' }} /></Skeleton>
+                : <Title1>{k.value ?? '—'}</Title1>}
               <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>{k.note}</Caption1>
             </div>
           </Section>
@@ -128,6 +130,7 @@ export function Inicio() {
               )}
             </TableBody>
           </Table>
+          {loading && !data && <Spinner size="small" style={{ padding: 24 }} />}
         </Section>
         <div className={s.col}>
           <Section title="Informes por semana" subtitle="últimas 12">
@@ -158,6 +161,7 @@ export function Inicio() {
                 </div>
               </div>
             ))}
+            {loading && !data && <Spinner size="small" style={{ padding: 16 }} />}
             {data && data.activity.length === 0 && <Caption1>Sin actividad reciente.</Caption1>}
           </Section>
         </div>

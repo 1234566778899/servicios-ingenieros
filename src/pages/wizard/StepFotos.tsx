@@ -7,7 +7,7 @@ import {
   Add24Regular, ArrowLeft20Regular, ArrowRight20Regular, CheckmarkCircle16Filled, ChevronLeft20Regular,
   ChevronRight20Regular, Delete20Regular, Dismiss20Regular, Save20Regular,
 } from '@fluentui/react-icons';
-import { Section } from '../../components/common';
+import { AsyncButton, Section } from '../../components/common';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { EquipmentRail } from '../../components/EquipmentRail';
 import { PhotoThumb } from '../../components/PhotoThumb';
@@ -211,10 +211,10 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
         </Section>
       </div>
       <div className={s.footer}>
-        <Button icon={<ArrowLeft20Regular />} onClick={() => goTo(3)}>Anterior</Button>
-        <Button appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={async () => { await syncPhotoStatus(svc.id); goTo(5); }}>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(3)}>Anterior</AsyncButton>
+        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo(5, () => syncPhotoStatus(svc.id))}>
           Siguiente: Hallazgos
-        </Button>
+        </AsyncButton>
       </div>
 
       {viewer && (

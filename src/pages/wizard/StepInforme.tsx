@@ -7,7 +7,7 @@ import {
   ArrowDownload20Regular, ArrowLeft20Regular, CheckmarkCircle24Filled, DocumentPdf24Regular, DocumentText24Regular,
   Open20Regular, DocumentArrowRight20Regular, Print20Regular,
 } from '@fluentui/react-icons';
-import { Section } from '../../components/common';
+import { AsyncButton, Section } from '../../components/common';
 import { DateInput } from '../../components/DateInput';
 import { useAuth } from '../../lib/auth';
 import { useCatalogs } from '../../lib/catalogs';
@@ -177,7 +177,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
         </Section>
       </div>
       <div className={s.footer}>
-        <Button icon={<ArrowLeft20Regular />} onClick={() => goTo(5)}>Anterior</Button>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(5)}>Anterior</AsyncButton>
         <span style={{ flex: 1 }} />
         {!desktop && can('informes.pdf') && (
           <Button icon={<Print20Regular />} disabled={!model} style={{ marginRight: 8 }}

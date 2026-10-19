@@ -4,7 +4,7 @@ import {
   TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { ArrowLeft20Regular, ArrowRight20Regular, CheckmarkCircle20Regular, Eraser20Regular } from '@fluentui/react-icons';
-import { Section, StatusBadge } from '../../components/common';
+import { AsyncButton, Section, StatusBadge } from '../../components/common';
 import { EquipmentRail } from '../../components/EquipmentRail';
 import { FindingDialog } from '../../components/FindingDialog';
 import { useCatalogs } from '../../lib/catalogs';
@@ -224,12 +224,12 @@ export function StepChecklist({ bundle, reload, readOnly, goTo }: StepProps) {
         )}
       </div>
       <div className={s.footer}>
-        <Button icon={<ArrowLeft20Regular />} onClick={async () => { await saveObservation(); goTo(2); }}>Anterior: Equipos</Button>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(2, saveObservation)}>Anterior: Equipos</AsyncButton>
         <div style={{ display: 'flex', gap: 8 }}>
           {nextEq && <Button onClick={() => { saveObservation(); setSelId(nextEq.id); }}>Siguiente equipo: {nextEq.code}</Button>}
-          <Button appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={async () => { await saveObservation(); await reload(); goTo(4); }}>
+          <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo(4, saveObservation)}>
             Siguiente: Fotografías
-          </Button>
+          </AsyncButton>
         </div>
       </div>
       <FindingDialog open={!!finding} bundle={bundle} initial={finding ?? undefined} onClose={() => setFinding(null)}

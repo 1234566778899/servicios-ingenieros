@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactElement, type ReactNode } from 'react';
 import {
-  Badge, Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, MessageBar, MessageBarBody,
-  Spinner, Text, Title2, makeStyles, tokens, type BadgeProps,
+  Badge, Breadcrumb, Button, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, MessageBar, MessageBarBody,
+  Spinner, Text, Title2, makeStyles, tokens, type BadgeProps, type ButtonProps,
 } from '@fluentui/react-components';
 import { useRouter } from '../lib/router';
 
@@ -78,6 +78,25 @@ export function Section({ title, subtitle, actions, children, className }: {
 export function Loading({ label = 'Cargando…' }: { label?: string }) {
   const s = useStyles();
   return <div className={s.center}><Spinner label={label} /></div>;
+}
+
+/** Botón que se deshabilita y muestra un spinner mientras corre su acción asíncrona. */
+export function AsyncButton({ onClick, loading, icon, disabled, ...props }: Pick<ButtonProps, 'appearance' | 'iconPosition' | 'size' | 'children'> & {
+  onClick: () => unknown; loading?: boolean; icon?: ReactElement; disabled?: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+  const on = busy || !!loading;
+  return (
+    <Button {...props} icon={on ? <Spinner size="tiny" /> : icon} disabled={disabled || on}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await onClick();
+        } finally {
+          setBusy(false);
+        }
+      }} />
+  );
 }
 
 export function ErrorBar({ error }: { error?: string | null }) {

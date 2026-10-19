@@ -4,7 +4,7 @@ import {
   TableRow, Text, Textarea, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Add20Regular, ArrowClockwise20Regular, ArrowLeft20Regular, ArrowRight20Regular, Delete20Regular, Edit20Regular } from '@fluentui/react-icons';
-import { Section, StatusBadge } from '../../components/common';
+import { AsyncButton, Section, StatusBadge } from '../../components/common';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { FindingDialog } from '../../components/FindingDialog';
 import { supabase, must } from '../../lib/supabase';
@@ -158,8 +158,8 @@ export function StepHallazgos({ bundle, reload, readOnly, goTo, registerSave }: 
       </Section>
 
       <div className={s.footer}>
-        <Button icon={<ArrowLeft20Regular />} onClick={() => goTo(4)}>Anterior: Fotografías</Button>
-        <Button appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo(6)}>Siguiente: Generar informe</Button>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(4)}>Anterior: Fotografías</AsyncButton>
+        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo(6)}>Siguiente: Generar informe</AsyncButton>
       </div>
 
       <FindingDialog open={!!dialog} bundle={bundle} initial={dialog ?? undefined} onClose={() => setDialog(null)}

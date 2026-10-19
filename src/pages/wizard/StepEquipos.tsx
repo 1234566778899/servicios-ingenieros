@@ -7,7 +7,7 @@ import {
 import {
   Add20Regular, ArrowLeft20Regular, ArrowRight20Regular, Box20Regular, Delete20Regular, Edit20Regular, Search20Regular,
 } from '@fluentui/react-icons';
-import { Section, StatusBadge } from '../../components/common';
+import { AsyncButton, Section, StatusBadge } from '../../components/common';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { EquipmentDialog, type EquipmentForm } from '../../components/EquipmentDialog';
 import { useCatalogs } from '../../lib/catalogs';
@@ -148,10 +148,10 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
         )}
       </Section>
       <div className={s.footer}>
-        <Button icon={<ArrowLeft20Regular />} onClick={() => goTo(1)}>Anterior</Button>
-        <Button appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" disabled={!bundle.equipment.length} onClick={() => goTo(3)}>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(1)}>Anterior</AsyncButton>
+        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" disabled={!bundle.equipment.length} onClick={() => goTo(3)}>
           Siguiente: Checklist
-        </Button>
+        </AsyncButton>
       </div>
 
       <EquipmentDialog open={newOpen} title="Registrar equipo nuevo" sitePrefix={site?.equipment_prefix}

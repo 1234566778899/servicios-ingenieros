@@ -4,7 +4,7 @@ import {
   Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Add20Regular, ArrowClockwise16Regular, ArrowRight20Regular, Delete16Regular } from '@fluentui/react-icons';
-import { Section, ErrorBar } from '../../components/common';
+import { AsyncButton, Section, ErrorBar } from '../../components/common';
 import { DateInput } from '../../components/DateInput';
 import { useAuth } from '../../lib/auth';
 import { useCatalogs } from '../../lib/catalogs';
@@ -15,7 +15,7 @@ import { coverTitle, memoria, equipmentSummary, DEFAULT_PREV_DETAILS } from '../
 import { fmtDateTime, today } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
 import { SERVICE_TYPES, SPECIALTIES, type Service } from '../../lib/types';
-import type { SaveHandler } from './ServicioWizard';
+import type { SaveHandler, StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
@@ -45,7 +45,7 @@ const LABELS: Record<keyof Form, string> = {
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
-  bundle: ServiceBundle | null; reload: () => Promise<void>; readOnly: boolean; goTo: (n: number) => void;
+  bundle: ServiceBundle | null; reload: () => Promise<void>; readOnly: boolean; goTo: StepProps['goTo'];
   registerSave: (h: SaveHandler | null) => void;
 }) {
   const s = useStyles();
@@ -345,14 +345,14 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
       </div>
       <div className={s.footer}>
         <span />
-        <Button appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after"
+        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after"
           onClick={async () => {
             if (readOnly) return goTo(2);
-            if (!svc) return void save();
-            if (await save()) goTo(2);
+            if (!svc) return save();
+            if (await save()) await goTo(2);
           }}>
           {svc ? 'Siguiente: Equipos' : 'Crear y continuar'}
-        </Button>
+        </AsyncButton>
       </div>
 
       <Dialog open={!!conflict} modalType="alert">
