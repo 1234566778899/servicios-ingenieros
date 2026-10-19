@@ -1,0 +1,92 @@
+# Nórdico Ingenieros — Informes Técnicos de Servicios
+
+Sistema para registrar servicios técnicos (equipos, checklist, fotografías y hallazgos) y generar el
+informe del cliente en **Word** y **PDF**. Funciona como **aplicación web** (Vercel) y como
+**aplicación de escritorio** (Electron) desde el mismo código.
+
+- Interfaz: React 19 + [Fluent UI v9](https://react.fluentui.dev/)
+- Backend: [Supabase](https://supabase.com/) (Postgres + Auth + Storage + Edge Functions)
+- Informes: `docx` (Word) y Chromium (PDF)
+
+## Funcionalidades
+
+| Módulo | Qué hace |
+|---|---|
+| Inicio | Indicadores, servicios recientes, informes por semana y actividad del equipo |
+| Servicios | Listado con filtros y asistente de 6 pasos: datos → equipos → checklist → fotos → hallazgos → informe |
+| Equipos | Inventario por código, ficha con historial de servicios y último checklist |
+| Historial | Informes generados con versiones, descarga y exportación a CSV |
+| Administración | Usuarios, roles y permisos, plantillas de checklist versionadas, catálogo de hallazgos, clientes y sedes |
+| Trabajo simultáneo | Aviso en tiempo real de quién edita el mismo servicio y resolución de conflictos por campo |
+
+Los permisos se aplican en la base de datos con **RLS**: la interfaz solo oculta lo que el rol no puede
+hacer, pero quien protege los datos es Postgres.
+
+## Web vs. escritorio
+
+| | Web (Vercel) | Escritorio (Electron) |
+|---|---|---|
+| Todo el flujo de servicios, Word, historial y administración | ✅ | ✅ |
+| PDF del informe | **Imprimir / Guardar como PDF** desde el navegador | Se genera y se guarda en la nube automáticamente |
+| Abrir / guardar archivos | Descarga del navegador | Diálogo nativo y apertura con la app predeterminada |
+| Menú nativo (Archivo, Servicios, Informes…) | — | ✅ |
+
+## Desarrollo local
+
+Requisitos: Node 20+.
+
+```bash
+npm install
+cp .env.example .env      # completa la URL y la clave publishable de Supabase
+npm run dev               # Vite + ventana de Electron
+npm run dev:web           # solo la versión web en http://localhost:5173
+```
+
+Otros comandos:
+
+```bash
+npm run build       # build web en dist/
+npm run typecheck   # verificación de TypeScript
+npm run dist        # instalador de escritorio (.dmg / .exe) en release/
+```
+
+## Despliegue en Vercel
+
+1. Importa este repositorio en Vercel (**Add New → Project**). La configuración ya está en `vercel.json`
+   (Vite, salida `dist/`, cabeceras de seguridad y sin descargar Electron durante la instalación).
+2. En **Settings → Environment Variables** agrega:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY` → la clave **publishable** (`sb_publishable_…`)
+3. Despliega.
+4. En Supabase → **Authentication → URL Configuration**, agrega la URL de Vercel en *Site URL* y
+   *Redirect URLs* (necesario para el enlace de "¿Olvidaste tu contraseña?").
+
+> ⚠️ Nunca configures la clave `secret` / `service_role` en Vercel ni en `.env`: todo lo que empieza con
+> `VITE_` queda dentro del JavaScript público. Las operaciones que la necesitan (crear y desactivar
+> usuarios) viven en la Edge Function `admin-users`.
+
+## Supabase
+
+- Las tablas, políticas RLS, funciones y buckets (`photos`, `reports`) ya existen en el proyecto.
+- Edge Function de administración de usuarios:
+
+  ```bash
+  supabase functions deploy admin-users --project-ref <ref-del-proyecto>
+  ```
+
+  Solo responde a usuarios activos con el permiso `usuarios.admin`.
+- Para que un usuario nuevo pueda entrar necesita un registro en `public.profiles` con su rol
+  (la pantalla **Usuarios** lo crea automáticamente).
+
+## Estructura
+
+```
+electron/            proceso principal (ventana, menú, PDF, archivos)
+src/
+  components/        Shell, diálogos y piezas compartidas
+  pages/             pantallas; pages/wizard/ = asistente de 6 pasos
+  report/            modelo del informe, HTML (vista previa/PDF) y Word
+  lib/               Supabase, sesión y permisos, catálogos, conexión, presencia
+  assets/            logos
+supabase/functions/  Edge Function admin-users
+```

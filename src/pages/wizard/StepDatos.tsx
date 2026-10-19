@@ -1,0 +1,386 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Button, Caption1, Checkbox, Dropdown, Field, Input, Option, Radio, RadioGroup, Text, Textarea,
+  Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles, tokens,
+} from '@fluentui/react-components';
+import { Add20Regular, ArrowClockwise16Regular, ArrowRight20Regular, Delete16Regular } from '@fluentui/react-icons';
+import { Section, ErrorBar } from '../../components/common';
+import { DateInput } from '../../components/DateInput';
+import { useAuth } from '../../lib/auth';
+import { useCatalogs } from '../../lib/catalogs';
+import { useRouter } from '../../lib/router';
+import { supabase } from '../../lib/supabase';
+import { logActivity, type ServiceBundle } from '../../lib/services';
+import { coverTitle, memoria, equipmentSummary, DEFAULT_PREV_DETAILS } from '../../lib/texts';
+import { fmtDateTime, today } from '../../lib/format';
+import { useNotify } from '../../lib/toast';
+import { SERVICE_TYPES, SPECIALTIES, type Service } from '../../lib/types';
+import type { SaveHandler } from './ServicioWizard';
+
+const useStyles = makeStyles({
+  grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start' },
+  form: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 16px' },
+  span2: { gridColumn: 'span 2' },
+  span3: { gridColumn: 'span 3' },
+  col: { display: 'flex', flexDirection: 'column', gap: '16px' },
+  footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' },
+  detail: { display: 'flex', alignItems: 'center', gap: '4px' },
+});
+
+type Form = Pick<Service,
+  'work_order' | 'service_type' | 'client_id' | 'site_id' | 'specialty' | 'execution_date' | 'lead_tech_id' |
+  'support_tech_ids' | 'site_contact' | 'cover_title' | 'description' | 'prev_details' | 'report_template_id'>;
+
+const FIELDS: (keyof Form)[] = [
+  'work_order', 'service_type', 'client_id', 'site_id', 'specialty', 'execution_date', 'lead_tech_id',
+  'support_tech_ids', 'site_contact', 'cover_title', 'description', 'prev_details', 'report_template_id',
+];
+const LABELS: Record<keyof Form, string> = {
+  work_order: 'Orden de trabajo', service_type: 'Tipo de servicio', client_id: 'Cliente', site_id: 'Tienda / Sede',
+  specialty: 'Especialidad', execution_date: 'Fecha de ejecución', lead_tech_id: 'Técnico responsable',
+  support_tech_ids: 'Técnicos de apoyo', site_contact: 'Contacto de tienda', cover_title: 'Título de portada',
+  description: 'Memoria descriptiva', prev_details: 'Detalles previos', report_template_id: 'Plantilla',
+};
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
+  bundle: ServiceBundle | null; reload: () => Promise<void>; readOnly: boolean; goTo: (n: number) => void;
+  registerSave: (h: SaveHandler | null) => void;
+}) {
+  const s = useStyles();
+  const cat = useCatalogs();
+  const { profile } = useAuth();
+  const { navigate } = useRouter();
+  const notify = useNotify();
+  const svc = bundle?.service;
+
+  const [form, setForm] = useState<Form>(() =>
+    svc
+      ? Object.fromEntries(FIELDS.map((k) => [k, svc[k]])) as Form
+      : {
+          work_order: '', service_type: SERVICE_TYPES[0], client_id: '', site_id: '', specialty: SPECIALTIES[0],
+          execution_date: today(), lead_tech_id: profile!.id, support_tech_ids: [], site_contact: '',
+          cover_title: '', description: '', prev_details: DEFAULT_PREV_DETAILS, report_template_id: null,
+        },
+  );
+  const [autoTitle, setAutoTitle] = useState(!svc?.cover_title);
+  const [autoDesc, setAutoDesc] = useState(!svc?.description);
+  const [newDetail, setNewDetail] = useState('');
+  const [nextCode, setNextCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<{ server: Service; fields: (keyof Form)[] } | null>(null);
+  const [choice, setChoice] = useState<Record<string, 'mine' | 'cloud'>>({});
+
+  const site = cat.sites.find((x) => x.id === form.site_id);
+  const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    if (!svc) supabase.rpc('peek_service_code').then(({ data }) => setNextCode(data ?? ''));
+  }, [svc]);
+
+  // Textos automáticos mientras el usuario no los edite a mano
+  useEffect(() => {
+    if (autoTitle) set('cover_title', coverTitle(form.service_type, form.specialty, site));
+    if (autoDesc) set('description', memoria(form.service_type, form.specialty, site));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.service_type, form.specialty, site, autoTitle, autoDesc]);
+
+  useEffect(() => {
+    if (!svc && site?.contact_name && !form.site_contact) set('site_contact', site.contact_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site]);
+
+  const templates = useMemo(
+    () => cat.reportTemplates.filter((t) => t.status !== 'Inactiva'),
+    [cat.reportTemplates],
+  );
+  useEffect(() => {
+    if (form.report_template_id || !templates.length) return;
+    const t = templates.find((x) => x.service_type === form.service_type && x.status === 'Activa') ?? templates.find((x) => x.status === 'Activa');
+    if (t) set('report_template_id', t.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, form.service_type]);
+
+  const validate = (f: Form) => {
+    const missing = (['service_type', 'client_id', 'site_id', 'specialty', 'execution_date', 'lead_tech_id', 'report_template_id'] as const)
+      .filter((k) => !f[k]).map((k) => LABELS[k]);
+    if (missing.length) {
+      setError(`Completa los campos obligatorios: ${missing.join(', ')}.`);
+      return false;
+    }
+    setError(null);
+    return true;
+  };
+
+  const payload = (f: Form) => ({ ...f, work_order: f.work_order || null, site_contact: f.site_contact || null });
+
+  // Actualiza solo si nadie guardó antes (version); si hubo cambios ajenos, detecta conflicto por campo
+  const update = async (base: Service, values: Form): Promise<boolean> => {
+    const { data, error } = await supabase
+      .from('services')
+      .update(payload(values))
+      .eq('id', base.id)
+      .eq('version', base.version)
+      .select('id');
+    if (error) throw new Error(error.message);
+    if (data.length) return true;
+    const { data: server, error: e2 } = await supabase.from('services').select('*').eq('id', base.id).single();
+    if (e2) throw new Error(e2.message);
+    const mine = FIELDS.filter((k) => !same(values[k], base[k]));
+    const theirs = FIELDS.filter((k) => !same(server[k], base[k]));
+    const clash = mine.filter((k) => theirs.includes(k) && !same(values[k], server[k]));
+    if (clash.length) {
+      setChoice(Object.fromEntries(clash.map((k) => [k, 'mine'])));
+      setConflict({ server, fields: clash });
+      return false;
+    }
+    // Sin choque: combina mis cambios sobre la versión de la nube
+    const merged = { ...(Object.fromEntries(FIELDS.map((k) => [k, server[k]])) as Form) };
+    for (const k of mine) (merged as any)[k] = values[k];
+    setForm(merged);
+    return update(server, merged);
+  };
+
+  const latest = useRef({ form, svc });
+  latest.current = { form, svc };
+
+  const save = async (): Promise<boolean> => {
+    if (readOnly) return true;
+    const { form: f, svc: current } = latest.current;
+    if (!validate(f)) return false;
+    try {
+      if (!current) {
+        const { data, error } = await supabase.from('services').insert(payload(f)).select('id, code').single();
+        if (error) throw new Error(error.message);
+        await logActivity(data.id, 'creó el servicio');
+        notify(`Servicio ${data.code} creado`);
+        navigate(`/servicios/${data.id}/editar?paso=2`);
+        return false; // la navegación ya cambia de pantalla
+      }
+      if (FIELDS.every((k) => same(f[k], current[k]))) return true;
+      const ok = await update(current, f);
+      if (ok) {
+        const changed = FIELDS.filter((k) => !same(f[k], current[k])).map((k) => `“${LABELS[k]}”`);
+        await logActivity(current.id, `editó ${changed.slice(0, 2).join(', ')}${changed.length > 2 ? '…' : ''}`);
+        notify('Cambios guardados');
+        await reload();
+      }
+      return ok;
+    } catch (e: any) {
+      setError(e.message);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    registerSave(save);
+    return () => registerSave(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const resolveConflict = async () => {
+    if (!conflict) return;
+    const merged = { ...form };
+    // Lo que yo no toqué se toma de la nube; en los campos en conflicto manda la elección
+    for (const k of FIELDS) if (svc && same(form[k], svc[k])) (merged as any)[k] = conflict.server[k];
+    for (const k of conflict.fields) if (choice[k] === 'cloud') (merged as any)[k] = conflict.server[k];
+    setConflict(null);
+    setForm(merged);
+    try {
+      if (await update(conflict.server, merged)) {
+        await logActivity(conflict.server.id, 'resolvió un conflicto de edición');
+        notify('Cambios guardados');
+        await reload();
+      }
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const show = (k: keyof Form, v: any) => {
+    if (k === 'client_id') return cat.clientName(v);
+    if (k === 'site_id') return cat.siteName(v);
+    if (k === 'lead_tech_id') return cat.userName(v);
+    if (Array.isArray(v)) return v.join(', ');
+    return String(v ?? '—');
+  };
+
+  const techs = cat.users.filter((u) => u.active);
+  const sites = cat.sites.filter((x) => x.client_id === form.client_id);
+
+  return (
+    <>
+      <ErrorBar error={error} />
+      <div className={s.grid}>
+        <Section title="Portada y sección 1 · Memoria descriptiva">
+          <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0 }}>
+            <div className={s.form}>
+              <Field label="Código de servicio">
+                <Input readOnly value={svc?.code ?? `${nextCode} (automático)`} />
+              </Field>
+              <Field label="Orden de trabajo / OC">
+                <Input value={form.work_order ?? ''} onChange={(_, d) => set('work_order', d.value)} placeholder="OT-00000" />
+              </Field>
+              <Field label="Tipo de servicio" required>
+                <Dropdown value={form.service_type} selectedOptions={[form.service_type]} onOptionSelect={(_, d) => set('service_type', d.optionValue!)}>
+                  {SERVICE_TYPES.map((t) => <Option key={t}>{t}</Option>)}
+                </Dropdown>
+              </Field>
+              <Field label="Cliente" required>
+                <Dropdown placeholder="Selecciona" value={form.client_id ? cat.clientName(form.client_id) : ''} selectedOptions={[form.client_id]}
+                  onOptionSelect={(_, d) => setForm((f) => ({ ...f, client_id: d.optionValue!, site_id: '' }))}>
+                  {cat.clients.map((c) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
+                </Dropdown>
+              </Field>
+              <Field label="Tienda / Sede" required>
+                <Dropdown placeholder={form.client_id ? 'Selecciona' : 'Elige un cliente'} disabled={!form.client_id}
+                  value={form.site_id ? cat.siteName(form.site_id) : ''} selectedOptions={[form.site_id]}
+                  onOptionSelect={(_, d) => set('site_id', d.optionValue!)}>
+                  {sites.map((x) => <Option key={x.id} value={x.id}>{x.name}</Option>)}
+                </Dropdown>
+              </Field>
+              <Field label="Especialidad" required>
+                <Dropdown value={form.specialty} selectedOptions={[form.specialty]} onOptionSelect={(_, d) => set('specialty', d.optionValue!)}>
+                  {SPECIALTIES.map((t) => <Option key={t}>{t}</Option>)}
+                </Dropdown>
+              </Field>
+              <Field label="Fecha de ejecución" required>
+                <DateInput value={form.execution_date} onChange={(v) => set('execution_date', v)} disabled={readOnly} />
+              </Field>
+              <Field label="Técnico responsable" required>
+                <Dropdown value={form.lead_tech_id ? cat.userName(form.lead_tech_id) : ''} selectedOptions={[form.lead_tech_id ?? '']}
+                  onOptionSelect={(_, d) => set('lead_tech_id', d.optionValue!)}>
+                  {techs.map((u) => <Option key={u.id} value={u.id}>{u.full_name}</Option>)}
+                </Dropdown>
+              </Field>
+              <Field label="Técnicos de apoyo">
+                <Dropdown multiselect placeholder="Ninguno"
+                  value={form.support_tech_ids.map((id) => cat.userName(id)).join(', ')}
+                  selectedOptions={form.support_tech_ids}
+                  onOptionSelect={(_, d) => set('support_tech_ids', d.selectedOptions)}>
+                  {techs.filter((u) => u.id !== form.lead_tech_id).map((u) => <Option key={u.id} value={u.id}>{u.full_name}</Option>)}
+                </Dropdown>
+              </Field>
+              <Field label="Dirección (de la sede)" className={s.span2}>
+                <Input readOnly value={site?.address ?? ''} placeholder="Se completa al elegir la sede" />
+              </Field>
+              <Field label="Contacto de tienda">
+                <Input value={form.site_contact ?? ''} onChange={(_, d) => set('site_contact', d.value)} />
+              </Field>
+              <Field
+                className={s.span3}
+                label={
+                  <span className={s.detail}>
+                    Título de portada {autoTitle ? '(automático)' : '(editado)'}
+                    {!autoTitle && <Button size="small" appearance="transparent" icon={<ArrowClockwise16Regular />} onClick={() => setAutoTitle(true)}>Restaurar</Button>}
+                  </span>
+                }
+              >
+                <Input value={form.cover_title ?? ''} onChange={(_, d) => { setAutoTitle(false); set('cover_title', d.value); }} />
+              </Field>
+              <Field
+                className={s.span3}
+                label={
+                  <span className={s.detail}>
+                    Memoria descriptiva {autoDesc ? '(generada · editable)' : '(editada)'}
+                    {!autoDesc && <Button size="small" appearance="transparent" icon={<ArrowClockwise16Regular />} onClick={() => setAutoDesc(true)}>Regenerar</Button>}
+                  </span>
+                }
+              >
+                <Textarea rows={3} resize="vertical" value={form.description ?? ''} onChange={(_, d) => { setAutoDesc(false); set('description', d.value); }} />
+              </Field>
+            </div>
+          </fieldset>
+        </Section>
+
+        <div className={s.col}>
+          <Section title="Detalles previos" subtitle="Sección 2">
+            {form.prev_details.map((d, i) => (
+              <div key={i} className={s.detail}>
+                <Checkbox checked label={d} disabled />
+                <span style={{ flex: 1 }} />
+                {!readOnly && (
+                  <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label={`Quitar ${d}`}
+                    onClick={() => set('prev_details', form.prev_details.filter((_, j) => j !== i))} />
+                )}
+              </div>
+            ))}
+            {!readOnly && (
+              <div className={s.detail} style={{ marginTop: 8 }}>
+                <Input style={{ flex: 1 }} size="small" placeholder="Nuevo detalle…" value={newDetail} onChange={(_, d) => setNewDetail(d.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newDetail.trim()) { set('prev_details', [...form.prev_details, newDetail.trim()]); setNewDetail(''); }
+                  }} />
+                <Button size="small" icon={<Add20Regular />} disabled={!newDetail.trim()}
+                  onClick={() => { set('prev_details', [...form.prev_details, newDetail.trim()]); setNewDetail(''); }}>
+                  Agregar detalle
+                </Button>
+              </div>
+            )}
+          </Section>
+          <Section title="Resumen de equipos" subtitle="automático">
+            <Text block>
+              {bundle?.equipment.length
+                ? `• ${equipmentSummary(form.service_type, bundle.equipment, cat.typeName)}`
+                : 'Aún no hay equipos.'}
+            </Text>
+            <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>Se completa con los equipos del Paso 2.</Caption1>
+          </Section>
+          <Section title="Formato del informe">
+            <Field label="Plantilla" required>
+              <Dropdown disabled={readOnly} placeholder="Selecciona"
+                value={templates.find((t) => t.id === form.report_template_id) ? `${templates.find((t) => t.id === form.report_template_id)!.code} · ${templates.find((t) => t.id === form.report_template_id)!.name}` : ''}
+                selectedOptions={[form.report_template_id ?? '']} onOptionSelect={(_, d) => set('report_template_id', d.optionValue!)}>
+                {templates.map((t) => <Option key={t.id} value={t.id} text={`${t.code} · ${t.name}`}>{t.code} · {t.name} v{String(t.version).padStart(2, '0')}</Option>)}
+              </Dropdown>
+            </Field>
+            {svc && (
+              <Caption1 block style={{ marginTop: 8, color: tokens.colorNeutralForeground3 }}>
+                Creado por {cat.userName(svc.created_by)} · {fmtDateTime(svc.created_at)}
+              </Caption1>
+            )}
+          </Section>
+        </div>
+      </div>
+      <div className={s.footer}>
+        <span />
+        <Button appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after"
+          onClick={async () => {
+            if (readOnly) return goTo(2);
+            if (!svc) return void save();
+            if (await save()) goTo(2);
+          }}>
+          {svc ? 'Siguiente: Equipos' : 'Crear y continuar'}
+        </Button>
+      </div>
+
+      <Dialog open={!!conflict} modalType="alert">
+        <DialogSurface style={{ maxWidth: 640 }}>
+          <DialogBody>
+            <DialogTitle>Este servicio fue modificado por otro usuario</DialogTitle>
+            <DialogContent>
+              <Text block style={{ marginBottom: 12 }}>
+                {cat.userName(conflict?.server.updated_by)} guardó cambios a las{' '}
+                {conflict && new Date(conflict.server.updated_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })} mientras
+                editabas. Elige qué versión conservar de cada campo en conflicto:
+              </Text>
+              {conflict?.fields.map((k) => (
+                <Field key={k} label={LABELS[k]} style={{ marginBottom: 12 }}>
+                  <RadioGroup value={choice[k]} onChange={(_, d) => setChoice((c) => ({ ...c, [k]: d.value as any }))}>
+                    <Radio value="mine" label={`Tu versión: ${show(k, form[k])}`} />
+                    <Radio value="cloud" label={`Versión en la nube (${cat.userName(conflict.server.updated_by)}): ${show(k, conflict.server[k])}`} />
+                  </RadioGroup>
+                </Field>
+              ))}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConflict(null)}>Seguir editando</Button>
+              <Button appearance="primary" onClick={resolveConflict}>Conservar seleccionada</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+    </>
+  );
+}

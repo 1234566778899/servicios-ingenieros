@@ -1,0 +1,58 @@
+{
+  "name": "nordico-desktop",
+  "productName": "Nordico Informes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nórdico Ingenieros — Informes Técnicos de Servicios (web + escritorio)",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "dev:web": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "start": "electron .",
+    "dist": "vite build && electron-builder"
+  },
+  "build": {
+    "appId": "pe.nordico.informes",
+    "files": [
+      "dist/**",
+      "electron/**",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    }
+  },
+  "dependencies": {
+    "@fluentui/react-components": "^9.74.9",
+    "@fluentui/react-datepicker-compat": "^0.6.39",
+    "@fluentui/react-icons": "^2.0.344",
+    "@supabase/supabase-js": "^2.118.0",
+    "docx": "^9.12.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "cross-env": "^10.1.0",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "pg": "^8.23.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "wait-on": "^9.5.1"
+  }
+}
