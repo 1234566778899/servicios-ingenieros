@@ -32,8 +32,9 @@ function Routes() {
   let m: Record<string, string> | null;
   if (match('/', path)) return <Inicio />;
   if (match('/servicios', path)) return <Servicios />;
-  if (match('/servicios/nuevo', path)) return can('servicios.crear') ? <ServicioWizard key="new" /> : <NoPermitido accion="Crear servicio" />;
-  if ((m = match('/servicios/:id/editar', path))) return <ServicioWizard key={m.id} serviceId={m.id} />;
+  // Misma key en "nuevo" y "editar": al crear el servicio no se vuelve a montar el asistente
+  if (match('/servicios/nuevo', path)) return can('servicios.crear') ? <ServicioWizard key="wizard" /> : <NoPermitido accion="Crear servicio" />;
+  if ((m = match('/servicios/:id/editar', path))) return <ServicioWizard key="wizard" serviceId={m.id} />;
   if ((m = match('/servicios/:id', path))) return <ServicioDetalle key={m.id} id={m.id} />;
   if (match('/equipos', path)) return <Equipos />;
   if ((m = match('/equipos/:code', path))) return <EquipoFicha key={m.code} code={m.code} />;

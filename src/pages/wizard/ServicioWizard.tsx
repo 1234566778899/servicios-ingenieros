@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Badge, Button, MessageBar, MessageBarBody, Tab, TabList, makeStyles, tokens,
+  Badge, Button, MessageBar, MessageBarBody, ProgressBar, Tab, TabList, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Checkmark16Filled, Save20Regular } from '@fluentui/react-icons';
 import { PageHeader, Loading, ErrorBar } from '../../components/common';
@@ -61,28 +61,34 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
     }
   }, [serviceId]);
 
-  // Recarga al cambiar de paso para ver lo que otros usuarios hayan guardado
-  const [freshFor, setFreshFor] = useState<number | null>(null);
+  // Carga inicial (y al pasar de "nuevo" a un servicio ya creado)
   useEffect(() => {
-    setFreshFor(null);
-    reload().then(() => setFreshFor(step));
-  }, [reload, step]);
+    setBundle(null);
+    reload();
+  }, [reload]);
+  // Paso al que se está yendo mientras se recargan los datos (el paso actual sigue visible)
+  const [pending, setPending] = useState<number | null>(null);
 
   const others = useServicePresence(serviceId, true);
   // En pantallas angostas la barra de pasos se desplaza hasta el paso actual
   const stepsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     stepsRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  }, [step, freshFor]);
+  }, [step, bundle]);
   const register = useCallback((h: SaveHandler | null) => setSaveHandler(() => h), []);
 
+  /** Guarda el paso actual, trae los datos al día (cambios de otros usuarios) y recién entonces cambia de paso. */
   const goTo = async (n: number) => {
-    if (!serviceId) return;
-    if (saveHandler && !(await saveHandler())) return;
-    navigate(`/servicios/${serviceId}/editar?paso=${n}`);
+    if (!serviceId || pending) return;
+    setPending(n);
+    try {
+      if (saveHandler && !(await saveHandler())) return;
+      await reload();
+      navigate(`/servicios/${serviceId}/editar?paso=${n}`);
+    } finally {
+      setPending(null);
+    }
   };
-
-  if (serviceId && !bundle) return error ? <ErrorBar error={error} /> : <Loading />;
 
   const svc = bundle?.service;
   const member = svc && [svc.created_by, svc.lead_tech_id, ...svc.support_tech_ids].includes(profile!.id);
@@ -171,13 +177,15 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
           })}
         </TabList>
       </div>
-      {freshFor !== step && <Loading />}
-      {freshFor === step && step === 1 && <StepDatos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
-      {bundle && freshFor === step && step === 2 && <StepEquipos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && freshFor === step && step === 3 && <StepChecklist bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && freshFor === step && step === 4 && <StepFotos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && freshFor === step && step === 5 && <StepHallazgos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
-      {bundle && freshFor === step && step === 6 && <StepInforme bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
+      {pending && <ProgressBar thickness="medium" style={{ marginTop: -12, marginBottom: 12 }} aria-label="Cargando paso" />}
+      {error && <ErrorBar error={error} />}
+      {serviceId && !bundle && !error && <Loading />}
+      {(!serviceId || bundle) && step === 1 && <StepDatos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
+      {bundle && step === 2 && <StepEquipos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 3 && <StepChecklist bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 4 && <StepFotos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 5 && <StepHallazgos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
+      {bundle && step === 6 && <StepInforme bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
     </>
   );
 }
