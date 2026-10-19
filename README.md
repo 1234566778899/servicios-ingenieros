@@ -54,9 +54,9 @@ npm run dist        # instalador de escritorio (.dmg / .exe) en release/
 
 1. Importa este repositorio en Vercel (**Add New → Project**). La configuración ya está en `vercel.json`
    (Vite, salida `dist/`, cabeceras de seguridad y sin descargar Electron durante la instalación).
-2. En **Settings → Environment Variables** agrega:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY` → la clave **publishable** (`sb_publishable_…`)
+2. La URL y la clave **publishable** de Supabase ya están en `.env.production` (son públicas por diseño).
+   Si cambias de proyecto, edita ese archivo o define `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` en
+   **Settings → Environment Variables** (tienen prioridad).
 3. Despliega.
 4. En Supabase → **Authentication → URL Configuration**, agrega la URL de Vercel en *Site URL* y
    *Redirect URLs* (necesario para el enlace de "¿Olvidaste tu contraseña?").
