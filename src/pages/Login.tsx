@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import {
-  Button, Caption1, Card, Checkbox, Field, Input, Link, MessageBar, MessageBarBody, MessageBarTitle,
+  Button, Card, Checkbox, Field, Input, Link, MessageBar, MessageBarBody, MessageBarTitle,
   Spinner, Subtitle1, Text, Title1, makeStyles, tokens,
 } from '@fluentui/react-components';
-import { Circle12Filled, PersonKey20Regular } from '@fluentui/react-icons';
+import { PersonKey20Regular } from '@fluentui/react-icons';
 import logoWhite from '../assets/logo-white.png';
 import { useAuth } from '../lib/auth';
 import { useConnection } from '../lib/connection';
@@ -26,7 +26,6 @@ const useStyles = makeStyles({
   row: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   demo: { width: '100%', maxWidth: '400px', boxSizing: 'border-box', marginTop: '12px' },
   demoRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
-  footer: { marginTop: '16px', display: 'flex', alignItems: 'center', gap: '6px', color: tokens.colorNeutralForeground3 },
 });
 
 function readRemembered() {
@@ -136,10 +135,6 @@ export function Login() {
             </MessageBarBody>
           </MessageBar>
         )}
-        <Caption1 className={s.footer}>
-          <Circle12Filled color={conn.online ? tokens.colorPaletteGreenForeground1 : tokens.colorPaletteRedForeground1} />
-          Servidor en la nube: {conn.online ? 'disponible' : 'no disponible'} · v{__APP_VERSION__}
-        </Caption1>
       </div>
     </div>
   );

@@ -8,7 +8,6 @@ import {
   Home20Regular, Home20Filled, WrenchScrewdriver20Regular, WrenchScrewdriver20Filled, Box20Regular, Box20Filled,
   History20Regular, History20Filled, People20Regular, People20Filled, ShieldKeyhole20Regular, ShieldKeyhole20Filled,
   BookTemplate20Regular, BookTemplate20Filled, SignOut20Regular, ChevronDown16Regular, bundleIcon, Navigation20Regular,
-  Circle12Filled,
 } from '@fluentui/react-icons';
 import logo from '../assets/logo.png';
 import { useAuth } from '../lib/auth';
@@ -25,7 +24,7 @@ const Shield = bundleIcon(ShieldKeyhole20Filled, ShieldKeyhole20Regular);
 const Book = bundleIcon(BookTemplate20Filled, BookTemplate20Regular);
 
 const useStyles = makeStyles({
-  root: { display: 'grid', gridTemplateColumns: 'auto 1fr', gridTemplateRows: '1fr auto', height: '100dvh', overflow: 'hidden' },
+  root: { display: 'grid', gridTemplateColumns: 'auto 1fr', gridTemplateRows: '1fr', height: '100dvh', overflow: 'hidden' },
   rootCompact: { gridTemplateColumns: '1fr' },
   nav: { gridRow: '1', height: '100%', minWidth: '240px', width: '240px' },
   main: { display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, backgroundColor: tokens.colorNeutralBackground2 },
@@ -35,15 +34,6 @@ const useStyles = makeStyles({
   },
   search: { width: '360px', maxWidth: '40vw', '@media (max-width: 900px)': { flex: 1, width: 'auto', maxWidth: 'none', minWidth: 0 } },
   content: { flex: 1, overflow: 'auto', padding: '20px 28px 28px', '@media (max-width: 600px)': { padding: '12px 12px 20px' } },
-  status: {
-    gridColumn: '1 / span 2', display: 'flex', alignItems: 'center', gap: '20px', padding: '3px 16px',
-    borderTop: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground3,
-    color: tokens.colorNeutralForeground2, overflow: 'hidden', whiteSpace: 'nowrap',
-  },
-  // En pantallas angostas la barra de estado solo muestra la conexión
-  statusCompact: { gridColumn: '1' },
-  statusExtra: { '@media (max-width: 900px)': { display: 'none' } },
-  grow: { flex: 1 },
   userBtn: { display: 'flex', alignItems: 'center', gap: '8px' },
 });
 
@@ -135,17 +125,6 @@ export function Shell({ children }: { children: ReactNode }) {
         )}
         <main className={s.content}>{children}</main>
       </div>
-
-      <footer className={mergeClasses(s.status, compact && s.statusCompact)}>
-        <Caption1 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Circle12Filled color={conn.online ? tokens.colorPaletteGreenForeground1 : tokens.colorPaletteRedForeground1} />
-          {conn.online ? 'Conectado a la nube' : 'Sin conexión'}
-        </Caption1>
-        <Caption1 className={s.statusExtra}>Servidor: supabase · {import.meta.env.VITE_SUPABASE_URL.replace('https://', '').split('.')[0].slice(0, 8)}</Caption1>
-        <span className={s.grow} />
-        <Caption1 className={s.statusExtra}>Usuario: {profile?.full_name} ({roleName})</Caption1>
-        <Caption1>v{__APP_VERSION__}</Caption1>
-      </footer>
     </div>
   );
 }
