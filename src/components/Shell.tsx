@@ -14,7 +14,6 @@ import logo from '../assets/logo.png';
 import { useAuth } from '../lib/auth';
 import { useRouter } from '../lib/router';
 import { useConnection } from '../lib/connection';
-import { fmtTime } from '../lib/format';
 import { useCompact } from '../lib/media';
 
 const Home = bundleIcon(Home20Filled, Home20Regular);
@@ -127,7 +126,7 @@ export function Shell({ children }: { children: ReactNode }) {
         {!conn.online && (
           <MessageBar intent="error" layout="singleline" style={{ borderRadius: 0 }}>
             <MessageBarBody>
-              Sin conexión a Internet. No se pueden guardar ni consultar datos de la nube. Reintentando en {conn.retryIn} s…
+              Sin conexión a Internet. No se pueden guardar ni consultar datos de la nube.
             </MessageBarBody>
             <MessageBarActions>
               <Button size="small" onClick={conn.retry}>Reintentar ahora</Button>
@@ -141,11 +140,6 @@ export function Shell({ children }: { children: ReactNode }) {
         <Caption1 style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Circle12Filled color={conn.online ? tokens.colorPaletteGreenForeground1 : tokens.colorPaletteRedForeground1} />
           {conn.online ? 'Conectado a la nube' : 'Sin conexión'}
-        </Caption1>
-        <Caption1 className={s.statusExtra}>
-          {conn.online
-            ? `Última sincronización: ${conn.lastSync ? fmtTime(conn.lastSync) : '—'}`
-            : `Último intento: ${conn.lastAttempt ? fmtTime(conn.lastAttempt) : '—'}`}
         </Caption1>
         <Caption1 className={s.statusExtra}>Servidor: supabase · {import.meta.env.VITE_SUPABASE_URL.replace('https://', '').split('.')[0].slice(0, 8)}</Caption1>
         <span className={s.grow} />
