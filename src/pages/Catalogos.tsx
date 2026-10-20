@@ -17,7 +17,7 @@ import { supabase, must } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
 import { fmtDateTime } from '../lib/format';
 import { useNotify } from '../lib/toast';
-import type { CatalogFinding, ChecklistTemplate, Priority, Site, TemplateItem } from '../lib/types';
+import type { CatalogFinding, CatalogOption, ChecklistTemplate, Priority, Site, TemplateItem } from '../lib/types';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
@@ -26,9 +26,11 @@ const useStyles = makeStyles({
   form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
   span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
   filters: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '12px', flexWrap: 'wrap' },
+  pair: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
 });
 
 export function Catalogos() {
+  const s = useStyles();
   const { can } = useAuth();
   const [tab, setTab] = useState('checklist');
   const admin = can('catalogos.admin');
@@ -39,6 +41,7 @@ export function Catalogos() {
         <Tab value="checklist">Checklist por tipo de equipo</Tab>
         <Tab value="hallazgos">Catálogo de hallazgos</Tab>
         <Tab value="clientes">Clientes y sedes</Tab>
+        <Tab value="opciones">Tipos de servicio y especialidades</Tab>
       </TabList>
       {!admin && (
         <MessageBar style={{ marginBottom: 12 }}><MessageBarBody>Solo lectura: administrar catálogos requiere el permiso “Catálogos y plantillas de checklist”.</MessageBarBody></MessageBar>
@@ -46,6 +49,12 @@ export function Catalogos() {
       {tab === 'checklist' && <ChecklistTemplates admin={admin} />}
       {tab === 'hallazgos' && <FindingsCatalog admin={admin} />}
       {tab === 'clientes' && <ClientsSites admin={admin} />}
+      {tab === 'opciones' && (
+        <div className={s.pair}>
+          <OptionsCatalog admin={admin} table="service_types" column="service_type" title="Tipos de servicio" singular="tipo de servicio" female={false} placeholder="Ej.: Mantenimiento predictivo" />
+          <OptionsCatalog admin={admin} table="specialties" column="specialty" title="Especialidades" singular="especialidad" female placeholder="Ej.: Agua helada" />
+        </div>
+      )}
     </>
   );
 }
@@ -512,5 +521,136 @@ function ClientsSites({ admin }: { admin: boolean }) {
         </DialogSurface>
       </Dialog>
     </div>
+  );
+}
+
+/* ───────────────────────── Tipos de servicio y especialidades ───────────────────────── */
+
+function OptionsCatalog({ admin, table, column, title, singular, female, placeholder }: {
+  admin: boolean; table: 'service_types' | 'specialties'; column: 'service_type' | 'specialty';
+  title: string; singular: string; female: boolean; placeholder: string;
+}) {
+  const g = (fem: string, masc: string) => (female ? fem : masc);
+  const cat = useCatalogs();
+  const notify = useNotify();
+  const list = table === 'service_types' ? cat.serviceTypes : cat.specialties;
+  const [draft, setDraft] = useState<{ id?: string; name: string } | null>(null);
+  const [toDelete, setToDelete] = useState<CatalogOption | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Usos por nombre: los servicios guardan el texto, no el id
+  const { data: uses } = useAsync(async () => {
+    const rows = must(await supabase.from('services').select(column)) as Record<string, string>[];
+    const count = new Map<string, number>();
+    for (const r of rows) count.set(r[column], (count.get(r[column]) ?? 0) + 1);
+    return count;
+  }, [column]);
+  const templatesFor = (name: string) => (table === 'service_types' ? cat.reportTemplates.filter((t) => t.service_type === name).length : 0);
+
+  const run = async (fn: () => Promise<{ error: { message: string } | null }>, fail: string) => {
+    setBusy(true);
+    const { error } = await fn();
+    setBusy(false);
+    if (error) {
+      notify(fail, 'error', error.message.includes('duplicate') ? `Ya existe ${g('una', 'un')} ${singular} con ese nombre.` : error.message);
+      return false;
+    }
+    await cat.reload();
+    return true;
+  };
+
+  const save = async () => {
+    const name = draft!.name.trim();
+    if (!name) return;
+    const ok = draft!.id
+      ? await run(async () => supabase.from(table).update({ name }).eq('id', draft!.id!), 'No se pudo renombrar')
+      : await run(async () => supabase.from(table).insert({ name, position: Math.max(0, ...list.map((o) => o.position)) + 1 }), 'No se pudo crear');
+    if (ok) setDraft(null);
+  };
+
+  const move = (i: number, d: number) => {
+    const a = list[i], b = list[i + d];
+    // Posiciones explícitas por índice: corrige empates si alguna vez se repitieron
+    return run(async () => {
+      const r1 = await supabase.from(table).update({ position: i + d + 1 }).eq('id', a.id);
+      if (r1.error) return r1;
+      return supabase.from(table).update({ position: i + 1 }).eq('id', b.id);
+    }, 'No se pudo reordenar');
+  };
+
+  return (
+    <Section title={title} subtitle={`${list.filter((o) => o.active).length} ${g('activas', 'activos')}`}
+      actions={admin && <Button size="small" icon={<Add20Regular />} onClick={() => setDraft({ name: '' })}>Agregar</Button>}>
+      <Table size="small">
+        <TableHeader>
+          <TableRow>
+            {admin && <TableHeaderCell style={{ width: 70 }}>Orden</TableHeaderCell>}
+            <TableHeaderCell>Nombre</TableHeaderCell>
+            <TableHeaderCell style={{ width: 80 }}>Servicios</TableHeaderCell>
+            <TableHeaderCell style={{ width: 80 }}>{g('Activa', 'Activo')}</TableHeaderCell>
+            {admin && <TableHeaderCell style={{ width: 120 }} />}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {list.map((o, i) => {
+            const used = (uses?.get(o.name) ?? 0) + templatesFor(o.name);
+            return (
+              <TableRow key={o.id}>
+                {admin && (
+                  <TableCell>
+                    <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Subir" disabled={busy || i === 0} onClick={() => move(i, -1)} />
+                    <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label="Bajar" disabled={busy || i === list.length - 1} onClick={() => move(i, 1)} />
+                  </TableCell>
+                )}
+                <TableCell>
+                  <Text weight="semibold" style={{ color: o.active ? undefined : tokens.colorNeutralForeground4 }}>{o.name}</Text>
+                </TableCell>
+                <TableCell>{uses ? uses.get(o.name) ?? 0 : '…'}</TableCell>
+                <TableCell>
+                  <Switch checked={o.active} disabled={!admin || busy} aria-label={`${g('Activa', 'Activo')}: ${o.name}`}
+                    onChange={(_, d) => run(async () => supabase.from(table).update({ active: d.checked }).eq('id', o.id), 'No se pudo actualizar')} />
+                </TableCell>
+                {admin && (
+                  <TableCell>
+                    <Link onClick={() => setDraft({ id: o.id, name: o.name })}>Renombrar</Link>
+                    {uses && !used && <> · <Link onClick={() => setToDelete(o)}>Quitar</Link></>}
+                  </TableCell>
+                )}
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+      {cat.loading && <Spinner style={{ padding: 24 }} />}
+      <Caption1 block style={{ marginTop: 12, color: tokens.colorNeutralForeground3 }}>
+        Solo {g('las activas aparecen', 'los activos aparecen')} al registrar un servicio. Renombrar o desactivar no cambia los servicios ya registrados;
+        {g(' las que ya se usaron', ' los que ya se usaron')} no se pueden quitar, solo desactivar.
+        {table === 'service_types' && ' Al renombrar un tipo de servicio, sus plantillas de informe se actualizan.'}
+      </Caption1>
+
+      <Dialog open={!!draft} onOpenChange={(_, d) => !d.open && setDraft(null)}>
+        <DialogSurface style={{ maxWidth: 420 }}>
+          <DialogBody>
+            <DialogTitle>{draft?.id ? `Renombrar ${singular}` : `${g('Nueva', 'Nuevo')} ${singular}`}</DialogTitle>
+            <DialogContent>
+              <Field label="Nombre" required>
+                <Input value={draft?.name ?? ''} autoFocus placeholder={placeholder} onChange={(_, d) => setDraft({ ...draft!, name: d.value })}
+                  onKeyDown={(e) => e.key === 'Enter' && save()} />
+              </Field>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setDraft(null)}>Cancelar</Button>
+              <Button appearance="primary" disabled={!draft?.name.trim() || busy} onClick={save}>{draft?.id ? 'Guardar' : 'Crear'}</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+      <ConfirmDialog open={!!toDelete} title={`¿Quitar “${toDelete?.name}”?`} body={`Se eliminará del catálogo de ${title.toLowerCase()}.`} danger confirmLabel="Quitar"
+        onCancel={() => setToDelete(null)}
+        onConfirm={async () => {
+          await run(async () => supabase.from(table).delete().eq('id', toDelete!.id), 'No se pudo quitar');
+          setToDelete(null);
+        }} />
+    </Section>
   );
 }

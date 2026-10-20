@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { supabase } from './supabase';
-import type { Client, EquipmentType, Profile, ReportTemplate, Site } from './types';
+import type { CatalogOption, Client, EquipmentType, Profile, ReportTemplate, Site } from './types';
 
 interface Catalogs {
   clients: Client[];
@@ -8,6 +8,8 @@ interface Catalogs {
   equipmentTypes: EquipmentType[];
   users: Profile[];
   reportTemplates: ReportTemplate[];
+  serviceTypes: CatalogOption[];
+  specialties: CatalogOption[];
   /** true hasta que termina la primera carga */
   loading: boolean;
   reload: () => Promise<void>;
@@ -25,21 +27,27 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
   const [equipmentTypes, setTypes] = useState<EquipmentType[]>([]);
   const [users, setUsers] = useState<Profile[]>([]);
   const [reportTemplates, setTemplates] = useState<ReportTemplate[]>([]);
+  const [serviceTypes, setServiceTypes] = useState<CatalogOption[]>([]);
+  const [specialties, setSpecialties] = useState<CatalogOption[]>([]);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
-    const [c, s, t, u, r] = await Promise.all([
+    const [c, s, t, u, r, st, sp] = await Promise.all([
       supabase.from('clients').select('*').order('name'),
       supabase.from('sites').select('*').order('name'),
       supabase.from('equipment_types').select('*').order('name'),
       supabase.from('profiles').select('*').order('full_name'),
       supabase.from('report_templates').select('*').order('name'),
+      supabase.from('service_types').select('*').order('position').order('name'),
+      supabase.from('specialties').select('*').order('position').order('name'),
     ]);
     setClients(c.data ?? []);
     setSites(s.data ?? []);
     setTypes(t.data ?? []);
     setUsers(u.data ?? []);
     setTemplates(r.data ?? []);
+    setServiceTypes(st.data ?? []);
+    setSpecialties(sp.data ?? []);
     setLoading(false);
   }, []);
 
@@ -53,7 +61,7 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider
       value={{
-        clients, sites, equipmentTypes, users, reportTemplates, loading, reload,
+        clients, sites, equipmentTypes, users, reportTemplates, serviceTypes, specialties, loading, reload,
         clientName: by(clients, 'name'),
         siteName: by(sites, 'name'),
         typeName: by(equipmentTypes, 'name'),
@@ -66,3 +74,9 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
 }
 
 export const useCatalogs = () => useContext(Ctx);
+
+/** Nombres activos para un desplegable; conserva el valor actual aunque se haya desactivado o renombrado. */
+export function optionNames(list: CatalogOption[], current?: string | null) {
+  const names = list.filter((o) => o.active).map((o) => o.name);
+  return current && !names.includes(current) ? [current, ...names] : names;
+}

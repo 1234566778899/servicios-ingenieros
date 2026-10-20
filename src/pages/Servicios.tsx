@@ -18,7 +18,7 @@ import { supabase, must } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
 import { fmtDate, shortType } from '../lib/format';
 import { useNotify } from '../lib/toast';
-import { SERVICE_TYPES, type Service } from '../lib/types';
+import type { Service } from '../lib/types';
 import { duplicateService } from '../lib/services';
 
 const PAGE = 15;
@@ -147,7 +147,7 @@ export function Servicios() {
             <Dropdown placeholder="Todos" selectedOptions={[type]} value={type}
               onOptionSelect={(_, d) => set(setType)(d.optionValue ?? '')} style={{ minWidth: 200 }}>
               <Option value="">Todos</Option>
-              {SERVICE_TYPES.map((t) => <Option key={t}>{t}</Option>)}
+              {cat.serviceTypes.map((t) => <Option key={t.id}>{t.name}</Option>)}
             </Dropdown>
           </Field>
           <Field label="Estado">

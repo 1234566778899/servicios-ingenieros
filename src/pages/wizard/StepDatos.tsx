@@ -7,14 +7,14 @@ import { Add20Regular, ArrowClockwise16Regular, ArrowRight20Regular, Delete16Reg
 import { AsyncButton, Section, ErrorBar } from '../../components/common';
 import { DateInput } from '../../components/DateInput';
 import { useAuth } from '../../lib/auth';
-import { useCatalogs } from '../../lib/catalogs';
+import { optionNames, useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
 import { supabase } from '../../lib/supabase';
 import { logActivity, type ServiceBundle } from '../../lib/services';
 import { coverTitle, memoria, equipmentSummary, DEFAULT_PREV_DETAILS } from '../../lib/texts';
 import { fmtDateTime, today } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
-import { SERVICE_TYPES, SPECIALTIES, type Service } from '../../lib/types';
+import type { Service } from '../../lib/types';
 import type { SaveHandler, StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
@@ -59,7 +59,8 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
     svc
       ? Object.fromEntries(FIELDS.map((k) => [k, svc[k]])) as Form
       : {
-          work_order: '', service_type: SERVICE_TYPES[0], client_id: '', site_id: '', specialty: SPECIALTIES[0],
+          work_order: '', service_type: optionNames(cat.serviceTypes)[0] ?? '', client_id: '', site_id: '',
+          specialty: optionNames(cat.specialties)[0] ?? '',
           execution_date: today(), lead_tech_id: profile!.id, support_tech_ids: [], site_contact: '',
           cover_title: '', description: '', prev_details: DEFAULT_PREV_DETAILS, report_template_id: null,
         },
@@ -85,6 +86,14 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
     if (autoDesc) set('description', memoria(form.service_type, form.specialty, site));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.service_type, form.specialty, site, autoTitle, autoDesc]);
+
+  // Servicio nuevo: si los catálogos aún cargaban al abrir, toma la primera opción activa al llegar
+  useEffect(() => {
+    if (svc) return;
+    if (!form.service_type && cat.serviceTypes.length) set('service_type', optionNames(cat.serviceTypes)[0] ?? '');
+    if (!form.specialty && cat.specialties.length) set('specialty', optionNames(cat.specialties)[0] ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cat.serviceTypes, cat.specialties]);
 
   useEffect(() => {
     if (!svc && site?.contact_name && !form.site_contact) set('site_contact', site.contact_name);
@@ -223,8 +232,8 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
                 <Input value={form.work_order ?? ''} onChange={(_, d) => set('work_order', d.value)} placeholder="OT-00000" />
               </Field>
               <Field label="Tipo de servicio" required>
-                <Dropdown value={form.service_type} selectedOptions={[form.service_type]} onOptionSelect={(_, d) => set('service_type', d.optionValue!)}>
-                  {SERVICE_TYPES.map((t) => <Option key={t}>{t}</Option>)}
+                <Dropdown placeholder="Selecciona" value={form.service_type} selectedOptions={[form.service_type]} onOptionSelect={(_, d) => set('service_type', d.optionValue!)}>
+                  {optionNames(cat.serviceTypes, svc?.service_type).map((t) => <Option key={t}>{t}</Option>)}
                 </Dropdown>
               </Field>
               <Field label="Cliente" required>
@@ -241,8 +250,8 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
                 </Dropdown>
               </Field>
               <Field label="Especialidad" required>
-                <Dropdown value={form.specialty} selectedOptions={[form.specialty]} onOptionSelect={(_, d) => set('specialty', d.optionValue!)}>
-                  {SPECIALTIES.map((t) => <Option key={t}>{t}</Option>)}
+                <Dropdown placeholder="Selecciona" value={form.specialty} selectedOptions={[form.specialty]} onOptionSelect={(_, d) => set('specialty', d.optionValue!)}>
+                  {optionNames(cat.specialties, svc?.specialty).map((t) => <Option key={t}>{t}</Option>)}
                 </Dropdown>
               </Field>
               <Field label="Fecha de ejecución" required>

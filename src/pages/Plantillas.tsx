@@ -8,12 +8,12 @@ import { Add20Regular, MoreHorizontal20Regular } from '@fluentui/react-icons';
 import { PageHeader, StatusBadge } from '../components/common';
 import { DateInput } from '../components/DateInput';
 import { useAuth } from '../lib/auth';
-import { useCatalogs } from '../lib/catalogs';
+import { optionNames, useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
 import { supabase, must } from '../lib/supabase';
 import { fmtDate } from '../lib/format';
 import { useNotify } from '../lib/toast';
-import { SERVICE_TYPES, type ReportTemplate } from '../lib/types';
+import type { ReportTemplate } from '../lib/types';
 
 const SECTIONS: [string, string][] = [
   ['portada', 'Portada'], ['memoria', '1. Memoria descriptiva'], ['detalles', '2. Detalles previos'], ['equipos', '3. Lista de equipos'],
@@ -42,7 +42,7 @@ export function Plantillas() {
   const admin = can('plantillas.admin');
 
   const blank = (): Draft => ({
-    code: 'F-SGC-100-01', name: '', service_type: SERVICE_TYPES[0], version: 1, issued_at: new Date().toISOString().slice(0, 10),
+    code: 'F-SGC-100-01', name: '', service_type: optionNames(cat.serviceTypes)[0] ?? null, version: 1, issued_at: new Date().toISOString().slice(0, 10),
     status: 'Borrador', sections: SECTIONS.map(([k]) => k), notes: '',
   });
 
@@ -122,7 +122,7 @@ export function Plantillas() {
                   <Field label="Nombre" required><Input value={draft.name} onChange={(_, d) => setDraft({ ...draft, name: d.value })} placeholder="Mantenimiento preventivo" /></Field>
                   <Field label="Tipo de servicio">
                     <Dropdown value={draft.service_type ?? ''} selectedOptions={[draft.service_type ?? '']} onOptionSelect={(_, d) => setDraft({ ...draft, service_type: d.optionValue! })}>
-                      {SERVICE_TYPES.map((t) => <Option key={t}>{t}</Option>)}
+                      {optionNames(cat.serviceTypes, draft.service_type).map((t) => <Option key={t}>{t}</Option>)}
                     </Dropdown>
                   </Field>
                   <Field label="Versión"><Input type="number" min={1} value={String(draft.version)} onChange={(_, d) => setDraft({ ...draft, version: Number(d.value) || 1 })} /></Field>

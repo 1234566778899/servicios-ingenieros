@@ -19,6 +19,8 @@ export interface Site {
   address: string | null; equipment_prefix: string | null; contact_name: string | null;
 }
 export interface EquipmentType { id: string; name: string; default_unit: string | null }
+/** Opción de catálogo simple: tipos de servicio y especialidades */
+export interface CatalogOption { id: string; name: string; active: boolean; position: number }
 
 export interface Service {
   id: string; code: string; work_order: string | null; service_type: string;
@@ -71,13 +73,6 @@ export interface Report {
   pdf_size: number | null; file_base_name: string | null; generated_by: string | null; generated_at: string;
 }
 
-export const SERVICE_TYPES = [
-  'Mantenimiento preventivo',
-  'Mantenimiento correctivo',
-  'Instalación de equipos',
-  'Inspección técnica',
-];
-export const SPECIALTIES = ['Aire acondicionado', 'Ventilación mecánica', 'Refrigeración', 'Electricidad'];
 export const STAGES: { id: Stage; label: string }[] = [
   { id: 'antes', label: 'Antes' },
   { id: 'durante', label: 'Durante' },
