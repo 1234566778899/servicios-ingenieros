@@ -6,7 +6,8 @@ import {
   Textarea, makeStyles, tokens,
 } from '@fluentui/react-components';
 import {
-  Add20Regular, ArrowDown16Regular, ArrowUp16Regular, Copy20Regular, Delete16Regular, History20Regular, Search20Regular,
+  Add20Regular, ArrowDown16Regular, ArrowDown20Regular, ArrowUp16Regular, ArrowUp20Regular, Copy20Regular, Delete16Regular,
+  Delete20Regular, Edit20Regular, History20Regular, MoreHorizontal20Regular, Search20Regular,
 } from '@fluentui/react-icons';
 import { PageHeader, Section, StatusBadge, ErrorBar } from '../components/common';
 import { EquipmentRail } from '../components/EquipmentRail';
@@ -16,6 +17,7 @@ import { useCatalogs } from '../lib/catalogs';
 import { supabase, must } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
 import { fmtDateTime } from '../lib/format';
+import { useMediaQuery } from '../lib/media';
 import { useNotify } from '../lib/toast';
 import type { CatalogFinding, CatalogOption, ChecklistTemplate, Priority, Site, TemplateItem } from '../lib/types';
 
@@ -26,23 +28,40 @@ const useStyles = makeStyles({
   form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
   span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
   filters: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '12px', flexWrap: 'wrap' },
+  // Columnas secundarias que se ocultan en celular (y su reemplazo compacto)
+  wideOnly: { '@media (max-width: 600px)': { display: 'none' } },
+  narrowOnly: { display: 'none', '@media (max-width: 600px)': { display: 'block' } },
   pair: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
 });
+
+const TABS = [
+  ['checklist', 'Checklist por tipo de equipo'],
+  ['hallazgos', 'Catálogo de hallazgos'],
+  ['clientes', 'Clientes y sedes'],
+  ['opciones', 'Tipos de servicio y especialidades'],
+] as const;
 
 export function Catalogos() {
   const s = useStyles();
   const { can } = useAuth();
   const [tab, setTab] = useState('checklist');
   const admin = can('catalogos.admin');
+  // Las cuatro pestañas no caben en celular: se cambian por un desplegable
+  const narrow = useMediaQuery('(max-width: 700px)');
   return (
     <>
       <PageHeader crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Administración' }, { label: 'Catálogos' }]} title="Catálogos y plantillas" />
-      <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as string)} style={{ marginBottom: 12 }}>
-        <Tab value="checklist">Checklist por tipo de equipo</Tab>
-        <Tab value="hallazgos">Catálogo de hallazgos</Tab>
-        <Tab value="clientes">Clientes y sedes</Tab>
-        <Tab value="opciones">Tipos de servicio y especialidades</Tab>
-      </TabList>
+      {narrow ? (
+        <Field label="Sección" style={{ marginBottom: 12 }}>
+          <Dropdown value={TABS.find(([k]) => k === tab)![1]} selectedOptions={[tab]} onOptionSelect={(_, d) => setTab(d.optionValue!)}>
+            {TABS.map(([k, label]) => <Option key={k} value={k}>{label}</Option>)}
+          </Dropdown>
+        </Field>
+      ) : (
+        <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as string)} style={{ marginBottom: 12 }}>
+          {TABS.map(([k, label]) => <Tab key={k} value={k}>{label}</Tab>)}
+        </TabList>
+      )}
       {!admin && (
         <MessageBar style={{ marginBottom: 12 }}><MessageBarBody>Solo lectura: administrar catálogos requiere el permiso “Catálogos y plantillas de checklist”.</MessageBarBody></MessageBar>
       )}
@@ -531,12 +550,15 @@ function OptionsCatalog({ admin, table, column, title, singular, female, placeho
   title: string; singular: string; female: boolean; placeholder: string;
 }) {
   const g = (fem: string, masc: string) => (female ? fem : masc);
+  const s = useStyles();
   const cat = useCatalogs();
   const notify = useNotify();
   const list = table === 'service_types' ? cat.serviceTypes : cat.specialties;
   const [draft, setDraft] = useState<{ id?: string; name: string } | null>(null);
   const [toDelete, setToDelete] = useState<CatalogOption | null>(null);
   const [busy, setBusy] = useState(false);
+  // En celular la columna de orden se oculta: subir/bajar pasan al menú de acciones
+  const narrow = useMediaQuery('(max-width: 600px)');
 
   // Usos por nombre: los servicios guardan el texto, no el id
   const { data: uses } = useAsync(async () => {
@@ -584,11 +606,11 @@ function OptionsCatalog({ admin, table, column, title, singular, female, placeho
       <Table size="small">
         <TableHeader>
           <TableRow>
-            {admin && <TableHeaderCell style={{ width: 70 }}>Orden</TableHeaderCell>}
+            {admin && <TableHeaderCell className={s.wideOnly} style={{ width: 70 }}>Orden</TableHeaderCell>}
             <TableHeaderCell>Nombre</TableHeaderCell>
-            <TableHeaderCell style={{ width: 80 }}>Servicios</TableHeaderCell>
-            <TableHeaderCell style={{ width: 80 }}>{g('Activa', 'Activo')}</TableHeaderCell>
-            {admin && <TableHeaderCell style={{ width: 120 }} />}
+            <TableHeaderCell className={s.wideOnly} style={{ width: 80 }}>Servicios</TableHeaderCell>
+            <TableHeaderCell style={{ width: 64 }}>{g('Activa', 'Activo')}</TableHeaderCell>
+            {admin && <TableHeaderCell style={{ width: 44 }} />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -597,23 +619,37 @@ function OptionsCatalog({ admin, table, column, title, singular, female, placeho
             return (
               <TableRow key={o.id}>
                 {admin && (
-                  <TableCell>
+                  <TableCell className={s.wideOnly}>
                     <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Subir" disabled={busy || i === 0} onClick={() => move(i, -1)} />
                     <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label="Bajar" disabled={busy || i === list.length - 1} onClick={() => move(i, 1)} />
                   </TableCell>
                 )}
                 <TableCell>
                   <Text weight="semibold" style={{ color: o.active ? undefined : tokens.colorNeutralForeground4 }}>{o.name}</Text>
+                  <Caption1 className={s.narrowOnly} style={{ color: tokens.colorNeutralForeground3 }}>
+                    {uses ? `${uses.get(o.name) ?? 0} ${uses.get(o.name) === 1 ? 'servicio' : 'servicios'}` : '…'}
+                  </Caption1>
                 </TableCell>
-                <TableCell>{uses ? uses.get(o.name) ?? 0 : '…'}</TableCell>
+                <TableCell className={s.wideOnly}>{uses ? uses.get(o.name) ?? 0 : '…'}</TableCell>
                 <TableCell>
                   <Switch checked={o.active} disabled={!admin || busy} aria-label={`${g('Activa', 'Activo')}: ${o.name}`}
                     onChange={(_, d) => run(async () => supabase.from(table).update({ active: d.checked }).eq('id', o.id), 'No se pudo actualizar')} />
                 </TableCell>
                 {admin && (
                   <TableCell>
-                    <Link onClick={() => setDraft({ id: o.id, name: o.name })}>Renombrar</Link>
-                    {uses && !used && <> · <Link onClick={() => setToDelete(o)}>Quitar</Link></>}
+                    <Menu>
+                      <MenuTrigger>
+                        <Button size="small" appearance="subtle" icon={<MoreHorizontal20Regular />} aria-label={`Acciones: ${o.name}`} disabled={busy} />
+                      </MenuTrigger>
+                      <MenuPopover>
+                        <MenuList>
+                          <MenuItem icon={<Edit20Regular />} onClick={() => setDraft({ id: o.id, name: o.name })}>Renombrar</MenuItem>
+                          {narrow && i > 0 && <MenuItem icon={<ArrowUp20Regular />} onClick={() => move(i, -1)}>Subir</MenuItem>}
+                          {narrow && i < list.length - 1 && <MenuItem icon={<ArrowDown20Regular />} onClick={() => move(i, 1)}>Bajar</MenuItem>}
+                          {uses && !used && <MenuItem icon={<Delete20Regular />} onClick={() => setToDelete(o)}>Quitar</MenuItem>}
+                        </MenuList>
+                      </MenuPopover>
+                    </Menu>
                   </TableCell>
                 )}
               </TableRow>
