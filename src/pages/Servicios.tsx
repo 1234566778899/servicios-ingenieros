@@ -86,6 +86,7 @@ export function Servicios() {
     can('servicios.editar_otros') ||
     (can('servicios.editar_propios') && [r.created_by, r.lead_tech_id, ...r.support_tech_ids].includes(profile!.id));
 
+  const filtered = !!(q.trim() || clientId || siteId || type || status || from || to);
   const clear = () => {
     setQ(''); setClientId(''); setSiteId(''); setType(''); setStatus(''); setFrom(''); setTo(''); setPage(0);
   };
@@ -159,7 +160,7 @@ export function Servicios() {
           </Field>
           <Field label="Desde"><DateInput value={from} onChange={set(setFrom)} placeholder="dd/mm/aaaa" style={{ width: 140 }} /></Field>
           <Field label="Hasta"><DateInput value={to} onChange={set(setTo)} placeholder="dd/mm/aaaa" style={{ width: 140 }} /></Field>
-          <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={clear}>Limpiar</Button>
+          {filtered && <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={clear}>Limpiar</Button>}
         </div>
 
         <Table size="small">
@@ -215,18 +216,20 @@ export function Servicios() {
         </Table>
         {loading && !data && <Spinner style={{ padding: 24 }} />}
         {data && data.rows.length === 0 && (
-          <MessageBar style={{ marginTop: 12 }}><MessageBarBody>No se encontraron servicios con esos filtros.</MessageBarBody></MessageBar>
+          <MessageBar style={{ marginTop: 12 }}>
+            <MessageBarBody>{filtered ? 'No se encontraron servicios con esos filtros.' : 'Aún no hay servicios registrados.'}</MessageBarBody>
+          </MessageBar>
         )}
-        <div className={s.pager}>
+        {total > 0 && <div className={s.pager}>
           <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
             {total ? `Mostrando ${page * PAGE + 1}–${Math.min(total, (page + 1) * PAGE)} de ${total} servicios` : ''}
           </Caption1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {pages > 1 && <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Button size="small" icon={<ChevronLeft20Regular />} disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="Anterior" />
             <Text size={200}>{page + 1} / {pages}</Text>
             <Button size="small" icon={<ChevronRight20Regular />} disabled={page + 1 >= pages} onClick={() => setPage(page + 1)} aria-label="Siguiente" />
-          </div>
-        </div>
+          </div>}
+        </div>}
       </Section>
       <ConfirmDialog
         open={!!toDelete}

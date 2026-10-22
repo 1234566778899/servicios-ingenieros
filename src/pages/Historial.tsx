@@ -35,7 +35,8 @@ export function Historial() {
   const { navigate } = useRouter();
   const notify = useNotify();
   const [q, setQ] = useState('');
-  const [from, setFrom] = useState(() => new Date(Date.now() - 60 * 86400_000).toISOString().slice(0, 10));
+  const defaultFrom = () => new Date(Date.now() - 60 * 86400_000).toISOString().slice(0, 10);
+  const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(today());
   const [clientId, setClientId] = useState('');
   const [siteId, setSiteId] = useState('');
@@ -90,6 +91,9 @@ export function Historial() {
     a.click();
   };
 
+  const filtered = !!(q || clientId || siteId || userId) || from !== defaultFrom() || to !== today();
+  const clear = () => { setQ(''); setFrom(defaultFrom()); setTo(today()); setClientId(''); setSiteId(''); setUserId(''); };
+
   const versions = open ? (data ?? []).filter((r) => r.service_id === open.service_id && r.id !== open.id) : [];
 
   return (
@@ -129,6 +133,7 @@ export function Historial() {
               {cat.users.map((u) => <Option key={u.id} value={u.id}>{u.full_name}</Option>)}
             </Dropdown>
           </Field>
+          {filtered && <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={clear}>Limpiar</Button>}
         </div>
         {!can('historial.ver_todos') && (
           <MessageBar style={{ marginBottom: 12 }}><MessageBarBody>Solo ves los informes de los servicios en los que participas.</MessageBarBody></MessageBar>
@@ -169,7 +174,9 @@ export function Historial() {
           </TableBody>
         </Table>
         {loading && !data && <Spinner style={{ padding: 24 }} />}
-        {data && !rows.length && <Caption1 block style={{ padding: 12 }}>No hay informes con esos filtros.</Caption1>}
+        {data && !rows.length && (
+          <Caption1 block style={{ padding: 12 }}>{filtered ? 'No hay informes con esos filtros.' : 'No hay informes generados en los últimos 60 días.'}</Caption1>
+        )}
       </Section>
 
       <OverlayDrawer position="end" size="medium" open={!!open} onOpenChange={(_, d) => !d.open && setOpen(null)}>
@@ -201,19 +208,23 @@ export function Historial() {
                 {can('historial.descargar') && <Button size="small" icon={<ArrowDownload20Regular />} onClick={() => act(open, k, 'save')}>Descargar</Button>}
               </div>
             ))}
-            <Text weight="semibold" block style={{ marginTop: 16 }}>Versiones anteriores</Text>
-            {versions.length
-              ? versions.map((v) => (
+            {versions.length > 0 && (
+              <>
+                <Text weight="semibold" block style={{ marginTop: 16 }}>Versiones anteriores</Text>
+                {versions.map((v) => (
                   <div key={v.id}>
                     <Link onClick={() => setOpen(v)}>
                       v{v.version} · {fmtDateTime(v.generated_at)} · {cat.userName(v.generated_by)} ({formats(v)})
                     </Link>
                   </div>
-                ))
-              : <Caption1>Ninguna.</Caption1>}
+                ))}
+              </>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
               <Button onClick={() => navigate(`/servicios/${open.service_id}`)}>Ver servicio</Button>
-              <Button appearance="primary" onClick={() => navigate(`/servicios/${open.service_id}/editar?paso=6`)}>Regenerar informe</Button>
+              {(can('informes.word') || can('informes.pdf')) && (
+                <Button appearance="primary" onClick={() => navigate(`/servicios/${open.service_id}/editar?paso=6`)}>Regenerar informe</Button>
+              )}
             </div>
           </DrawerBody>
         )}

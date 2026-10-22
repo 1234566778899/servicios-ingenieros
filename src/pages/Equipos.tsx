@@ -68,6 +68,8 @@ export function Equipos() {
     [data, q, clientId, siteId, type, status],
   );
 
+  const filtered = !!(q || clientId || siteId || type || status);
+
   return (
     <>
       <PageHeader crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Equipos' }]} title="Equipos registrados" />
@@ -101,7 +103,9 @@ export function Equipos() {
               {['Conforme', 'No conforme', 'Pendiente'].map((x) => <Option key={x}>{x}</Option>)}
             </Dropdown>
           </Field>
-          <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={() => { setQ(''); setClientId(''); setSiteId(''); setType(''); setStatus(''); }}>Limpiar</Button>
+          {filtered && (
+            <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={() => { setQ(''); setClientId(''); setSiteId(''); setType(''); setStatus(''); }}>Limpiar</Button>
+          )}
         </div>
         <Table size="small">
           <TableHeader>
@@ -135,7 +139,8 @@ export function Equipos() {
         </Table>
         {loading && !data && <Spinner style={{ padding: 24 }} />}
         <Caption1 block style={{ marginTop: 12, color: tokens.colorNeutralForeground3 }}>
-          {rows.length} equipos. Los equipos nuevos se registran dentro de un servicio (Paso 2 · Equipos).
+          {data && !rows.length && (filtered ? 'No hay equipos con esos filtros. ' : 'Aún no hay equipos registrados. ')}
+          {rows.length > 0 && `${rows.length} equipos. `}Los equipos nuevos se registran dentro de un servicio (Paso 2 · Equipos).
         </Caption1>
       </Section>
     </>

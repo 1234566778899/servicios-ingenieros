@@ -181,7 +181,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
             </Caption1>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            {versions.length > 0 && (
+            {versions.length > 1 && (
               <Menu>
                 <MenuTrigger><Button icon={<History20Regular />}>Historial de versiones</Button></MenuTrigger>
                 <MenuPopover>
@@ -416,7 +416,7 @@ function FindingsCatalog({ admin }: { admin: boolean }) {
             )}
             <DialogActions>
               <Button onClick={() => setDraft(null)}>Cancelar</Button>
-              <Button appearance="primary" onClick={save}>Guardar</Button>
+              <Button appearance="primary" disabled={!draft?.finding?.trim() || !draft.code?.trim()} onClick={save}>Guardar</Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
@@ -534,7 +534,7 @@ function ClientsSites({ admin }: { admin: boolean }) {
             )}
             <DialogActions>
               <Button onClick={() => setSite(null)}>Cancelar</Button>
-              <Button appearance="primary" onClick={saveSite}>Guardar</Button>
+              <Button appearance="primary" disabled={!site?.name?.trim()} onClick={saveSite}>Guardar</Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>

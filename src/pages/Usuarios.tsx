@@ -4,7 +4,7 @@ import {
   Field, Input, Link, MessageBar, MessageBarBody, Option, Radio, RadioGroup, Spinner, Switch, Table, TableBody,
   TableCell, TableHeader, TableHeaderCell, TableRow, Text, Title1, makeStyles, tokens,
 } from '@fluentui/react-components';
-import { PersonAdd20Regular, Search20Regular } from '@fluentui/react-icons';
+import { Dismiss20Regular, PersonAdd20Regular, Search20Regular } from '@fluentui/react-icons';
 import { PageHeader, Section, StatusBadge, ErrorBar } from '../components/common';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useAuth } from '../lib/auth';
@@ -62,6 +62,8 @@ export function Usuarios() {
       (!q || `${u.full_name} ${u.email}`.toLowerCase().includes(q.toLowerCase()))),
     [users, q, role, status],
   );
+
+  const filtered = !!(q || role) || status !== 'activos';
 
   const save = async () => {
     if (!draft) return;
@@ -135,6 +137,7 @@ export function Usuarios() {
               <Option value="todos">Todos</Option>
             </Dropdown>
           </Field>
+          {filtered && <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={() => { setQ(''); setRole(''); setStatus('activos'); }}>Limpiar</Button>}
         </div>
         <Table size="small">
           <TableHeader>
@@ -173,6 +176,7 @@ export function Usuarios() {
             ))}
           </TableBody>
         </Table>
+        {!rows.length && <Caption1 block style={{ padding: 12 }}>No hay usuarios con esos filtros.</Caption1>}
       </Section>
 
       <Dialog open={!!draft} onOpenChange={(_, d) => !d.open && setDraft(null)}>

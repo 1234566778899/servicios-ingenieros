@@ -146,7 +146,7 @@ export function Plantillas() {
             )}
             <DialogActions>
               <Button onClick={() => setDraft(null)}>Cancelar</Button>
-              <Button appearance="primary" onClick={save}>Guardar</Button>
+              <Button appearance="primary" disabled={!draft?.name?.trim() || !draft.code?.trim()} onClick={save}>Guardar</Button>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
