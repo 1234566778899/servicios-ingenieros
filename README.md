@@ -1,12 +1,11 @@
 # Nórdico Ingenieros — Informes Técnicos de Servicios
 
 Sistema para registrar servicios técnicos (equipos, checklist, fotografías y hallazgos) y generar el
-informe del cliente en **Word** y **PDF**. Funciona como **aplicación web** (Vercel) y como
-**aplicación de escritorio** (Electron) desde el mismo código.
+informe del cliente en **Word** y **PDF**. Es una **aplicación web** (React + Vite) desplegada en Vercel.
 
 - Interfaz: React 19 + [Fluent UI v9](https://react.fluentui.dev/)
 - Backend: [Supabase](https://supabase.com/) (Postgres + Auth + Storage + Edge Functions)
-- Informes: `docx` (Word) y Chromium (PDF)
+- Informes: `docx` (Word) y vista HTML imprimible (PDF desde el navegador)
 
 ## Funcionalidades
 
@@ -22,14 +21,10 @@ informe del cliente en **Word** y **PDF**. Funciona como **aplicación web** (Ve
 Los permisos se aplican en la base de datos con **RLS**: la interfaz solo oculta lo que el rol no puede
 hacer, pero quien protege los datos es Postgres.
 
-## Web vs. escritorio
+## PDF
 
-| | Web (Vercel) | Escritorio (Electron) |
-|---|---|---|
-| Todo el flujo de servicios, Word, historial y administración | ✅ | ✅ |
-| PDF del informe | **Imprimir / Guardar como PDF** desde el navegador | Se genera y se guarda en la nube automáticamente |
-| Abrir / guardar archivos | Descarga del navegador | Diálogo nativo y apertura con la app predeterminada |
-| Menú nativo (Archivo, Servicios, Informes…) | — | ✅ |
+El informe en Word se genera y se guarda en la nube. El PDF se obtiene con **Imprimir / Guardar como PDF**
+desde el navegador (paso “Informe” del asistente).
 
 ## Desarrollo local
 
@@ -38,8 +33,7 @@ Requisitos: Node 20+.
 ```bash
 npm install
 cp .env.example .env      # completa la URL y la clave publishable de Supabase
-npm run dev               # Vite + ventana de Electron
-npm run dev:web           # solo la versión web en http://localhost:5173
+npm run dev               # http://localhost:5173
 ```
 
 Otros comandos:
@@ -47,13 +41,13 @@ Otros comandos:
 ```bash
 npm run build       # build web en dist/
 npm run typecheck   # verificación de TypeScript
-npm run dist        # instalador de escritorio (.dmg / .exe) en release/
+npm run preview     # sirve el build localmente
 ```
 
 ## Despliegue en Vercel
 
 1. Importa este repositorio en Vercel (**Add New → Project**). La configuración ya está en `vercel.json`
-   (Vite, salida `dist/`, cabeceras de seguridad y sin descargar Electron durante la instalación).
+   (Vite, salida `dist/` y cabeceras de seguridad).
 2. La URL y la clave **publishable** de Supabase ya están en `.env.production` (son públicas por diseño).
    Si cambias de proyecto, edita ese archivo o define `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` en
    **Settings → Environment Variables** (tienen prioridad).
@@ -81,7 +75,6 @@ npm run dist        # instalador de escritorio (.dmg / .exe) en release/
 ## Estructura
 
 ```
-electron/            proceso principal (ventana, menú, PDF, archivos)
 src/
   components/        Shell, diálogos y piezas compartidas
   pages/             pantallas; pages/wizard/ = asistente de 6 pasos

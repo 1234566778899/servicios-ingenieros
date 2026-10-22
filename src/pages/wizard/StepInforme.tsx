@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Button, Caption1, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field,
-  MessageBar, MessageBarBody, Option, ProgressBar, Radio, RadioGroup, Spinner, Text, makeStyles, tokens,
+  MessageBar, MessageBarBody, Option, ProgressBar, Spinner, Text, makeStyles, tokens,
 } from '@fluentui/react-components';
 import {
-  ArrowDownload20Regular, ArrowLeft20Regular, CheckmarkCircle24Filled, DocumentPdf24Regular, DocumentText24Regular,
+  ArrowDownload20Regular, ArrowLeft20Regular, CheckmarkCircle24Filled, DocumentText24Regular,
   Open20Regular, DocumentArrowRight20Regular, Print20Regular,
 } from '@fluentui/react-icons';
 import { AsyncButton, Section } from '../../components/common';
@@ -12,14 +12,13 @@ import { DateInput } from '../../components/DateInput';
 import { useAuth } from '../../lib/auth';
 import { useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
-import { desktop } from '../../lib/desktop';
 import { today, fmtSize } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
 import { photoStagesDone } from '../../lib/services';
 import type { Report } from '../../lib/types';
 import { buildReportModel, type ReportModel } from '../../report/model';
 import { renderReportHtml } from '../../report/html';
-import { generateReport, openReportFile, printReportHtml, saveReportFile, type OutputFormat } from '../../report/generate';
+import { generateReport, openReportFile, printReportHtml, saveReportFile } from '../../report/generate';
 import type { StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
@@ -42,8 +41,6 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
   const [templateId, setTemplateId] = useState(svc.report_template_id ?? cat.reportTemplates[0]?.id ?? '');
   const [issueDate, setIssueDate] = useState(today());
   const canWord = can('informes.word');
-  const canPdf = can('informes.pdf') && !!desktop;
-  const [format, setFormat] = useState<OutputFormat>(canWord && canPdf ? 'both' : canPdf ? 'pdf' : 'docx');
   const [model, setModel] = useState<ReportModel | null>(null);
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -98,7 +95,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
     setBusy(true);
     setError(null);
     try {
-      const r = await generateReport(svc.id, tpl.id, issueDate, model, format);
+      const r = await generateReport(svc.id, tpl.id, issueDate, model);
       setResult(r.report);
       reload();
     } catch (e: any) {
@@ -133,20 +130,10 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
               <Field label="Fecha de emisión" required>
                 <DateInput value={issueDate} onChange={setIssueDate} />
               </Field>
-              <Field label="Formato de salida" required>
-                <RadioGroup value={format} onChange={(_, d) => setFormat(d.value as OutputFormat)}>
-                  <Radio value="pdf" label="PDF final" disabled={!canPdf} />
-                  <Radio value="docx" label="Word (.docx) editable" disabled={!canWord} />
-                  <Radio value="both" label="Ambos" disabled={!canPdf || !canWord} />
-                </RadioGroup>
-              </Field>
-              {!can('informes.pdf') && <Caption1>Tu rol no permite generar el PDF final.</Caption1>}
-              {can('informes.pdf') && !desktop && (
-                <Caption1>
-                  En la versión web el PDF se obtiene con “Imprimir / Guardar como PDF”. La app de escritorio lo genera y guarda
-                  en la nube automáticamente.
-                </Caption1>
-              )}
+              {!canWord && <Caption1>Tu rol no permite generar el informe en Word.</Caption1>}
+              {can('informes.pdf')
+                ? <Caption1>El Word se guarda en la nube. El PDF se obtiene con “Imprimir / Guardar como PDF”.</Caption1>
+                : <Caption1>Tu rol no permite generar el PDF final.</Caption1>}
             </div>
           </Section>
           <Section title="Contenido del informe" subtitle={`${sections.filter(([k]) => tpl?.sections.includes(k)).length} secciones`}>
@@ -179,13 +166,13 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
       <div className={s.footer}>
         <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(5)}>Anterior</AsyncButton>
         <span style={{ flex: 1 }} />
-        {!desktop && can('informes.pdf') && (
+        {can('informes.pdf') && (
           <Button icon={<Print20Regular />} disabled={!model} style={{ marginRight: 8 }}
             onClick={() => { try { printReportHtml(html); } catch (e: any) { notify('No se pudo imprimir', 'error', e.message); } }}>
             Imprimir / Guardar como PDF
           </Button>
         )}
-        {!readOnly && (canWord || canPdf) && (
+        {!readOnly && canWord && (
           <Button appearance="primary" icon={busy ? <Spinner size="tiny" /> : <DocumentArrowRight20Regular />} disabled={!model || busy} onClick={generate}>
             {busy ? 'Generando…' : 'Generar informe'}
           </Button>
@@ -212,17 +199,6 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
                   </div>
                   <Button size="small" icon={<Open20Regular />} onClick={() => act(() => openReportFile(result, 'docx'))}>Abrir</Button>
                   <Button size="small" icon={<ArrowDownload20Regular />} onClick={() => act(() => saveReportFile(result, 'docx'))}>Descargar</Button>
-                </div>
-              )}
-              {result?.pdf_path && (
-                <div className={s.file}>
-                  <DocumentPdf24Regular />
-                  <div style={{ flex: 1 }}>
-                    <Text block size={200} weight="semibold">{result.file_base_name}.pdf</Text>
-                    <Caption1>PDF final · {pages} páginas · {fmtSize(result.pdf_size)}</Caption1>
-                  </div>
-                  <Button size="small" icon={<Open20Regular />} onClick={() => act(() => openReportFile(result, 'pdf'))}>Abrir</Button>
-                  <Button size="small" icon={<ArrowDownload20Regular />} onClick={() => act(() => saveReportFile(result, 'pdf'))}>Descargar</Button>
                 </div>
               )}
             </DialogContent>

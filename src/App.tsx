@@ -1,10 +1,8 @@
-import { useEffect } from 'react';
 import { FluentProvider, Toaster, webLightTheme } from '@fluentui/react-components';
 import { AuthProvider, useAuth } from './lib/auth';
 import { CatalogsProvider } from './lib/catalogs';
 import { ConnectionProvider } from './lib/connection';
 import { RouterProvider, match, useRouter } from './lib/router';
-import { desktop } from './lib/desktop';
 import { Shell } from './components/Shell';
 import { Loading } from './components/common';
 import { Login } from './pages/Login';
@@ -24,10 +22,8 @@ import { NoPermitido } from './pages/NoPermitido';
 import { TOASTER_ID } from './lib/toast';
 
 function Routes() {
-  const { path, navigate } = useRouter();
+  const { path } = useRouter();
   const { can } = useAuth();
-
-  useEffect(() => desktop?.onNavigate(navigate), [navigate]);
 
   let m: Record<string, string> | null;
   if (match('/', path)) return <Inicio />;
@@ -47,8 +43,7 @@ function Routes() {
 }
 
 function Gate() {
-  const { session, profile, loading, signOut } = useAuth();
-  useEffect(() => desktop?.onLogout(() => void signOut()), [signOut]);
+  const { session, profile, loading } = useAuth();
   if (loading) return <Loading label="Iniciando…" />;
   if (!session || !profile) return <Login />;
   return (

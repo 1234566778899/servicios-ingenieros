@@ -15,7 +15,6 @@ import { useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
 import { supabase, must } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
-import { desktop } from '../lib/desktop';
 import { fmtDateTime, fmtSize, today } from '../lib/format';
 import { useNotify } from '../lib/toast';
 import { openReportFile, saveReportFile } from '../report/generate';
@@ -85,14 +84,10 @@ export function Historial() {
     const csv = '﻿' + [head, ...lines].map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\r\n');
     const bytes = new TextEncoder().encode(csv);
     const name = `historial-informes-${today()}.csv`;
-    if (desktop) {
-      if (await desktop.saveFile(name, bytes)) notify('Listado exportado');
-    } else {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([bytes]));
-      a.download = name;
-      a.click();
-    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([bytes]));
+    a.download = name;
+    a.click();
   };
 
   const versions = open ? (data ?? []).filter((r) => r.service_id === open.service_id && r.id !== open.id) : [];
