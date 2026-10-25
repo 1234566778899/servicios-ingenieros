@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Caption1, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle,
+  Button, Caption1, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle,
   Dropdown, Field, Input, MessageBar, MessageBarActions, MessageBarBody, Option, Spinner, Table, TableBody, TableCell, TableHeader,
-  TableHeaderCell, TableRow, Text, makeStyles, tokens,
+  TableHeaderCell, TableRow, TableSelectionCell, Text, makeStyles, tokens,
 } from '@fluentui/react-components';
 import {
-  Add20Regular, ArrowLeft20Regular, ArrowRight20Regular, Box20Regular, Delete20Regular, Edit20Regular, Search20Regular,
+  Add20Regular, ArrowLeft20Regular, ArrowRight20Regular, Delete20Regular, Edit20Regular, Search20Regular,
 } from '@fluentui/react-icons';
 import { AsyncButton, Section, StatusBadge } from '../../components/common';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -23,8 +23,11 @@ import type { StepProps } from './ServicioWizard';
 const useStyles = makeStyles({
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' },
   summary: { marginTop: '12px', padding: '10px 12px', backgroundColor: tokens.colorNeutralBackground3, borderRadius: tokens.borderRadiusMedium },
-  pickList: { maxHeight: '320px', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '12px' },
-  pickRow: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', borderRadius: tokens.borderRadiusMedium, ':hover': { backgroundColor: tokens.colorNeutralBackground1Hover } },
+  pickTable: { maxHeight: '380px', overflow: 'auto', marginTop: '12px', border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium },
+  pickHead: { position: 'sticky', top: 0, zIndex: 1, backgroundColor: tokens.colorNeutralBackground1 },
+  pickRow: { cursor: 'pointer' },
+  pickDone: { color: tokens.colorNeutralForeground4, cursor: 'default' },
+  wideOnly: { '@media (max-width: 600px)': { display: 'none' } },
 });
 
 /** Campos que se copian entre el inventario de la sede y el equipo del servicio */
@@ -245,13 +248,17 @@ function PickInventory({ open, list, inService, siteName, onAdd, onClose }: {
       (!type || e.equipment_type_id === type) &&
       (!q || `${e.code} ${e.serial} ${e.brand} ${e.model} ${cat.typeName(e.equipment_type_id)}`.toLowerCase().includes(q.toLowerCase())),
   );
+  // Los que ya están en el servicio van al final
   const free = filtered.filter((e) => !inService(e));
+  const shown = [...free, ...filtered.filter((e) => inService(e))];
+  const toggle = (id: string) => setSel((x) => { const n = new Set(x); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const allState = free.length && free.every((e) => sel.has(e.id)) ? true : free.some((e) => sel.has(e.id)) ? 'mixed' : false;
 
   return (
     <Dialog open={open} onOpenChange={(_, d) => {
       if (!d.open) onClose();
     }}>
-      <DialogSurface style={{ maxWidth: 760 }}>
+      <DialogSurface style={{ maxWidth: 900, width: '94vw' }}>
         <DialogBody>
           <DialogTitle>Agregar del inventario · {siteName}</DialogTitle>
           <DialogContent>
@@ -265,29 +272,47 @@ function PickInventory({ open, list, inService, siteName, onAdd, onClose }: {
                 </Dropdown>
               </Field>
             </div>
-            {free.length > 1 && (
-              <Checkbox style={{ marginTop: 8 }} label={`Seleccionar todos (${free.length})`}
-                checked={free.every((e) => sel.has(e.id)) ? true : free.some((e) => sel.has(e.id)) ? 'mixed' : false}
-                onChange={(_, d) => setSel(d.checked === true ? new Set(free.map((e) => e.id)) : new Set())} />
-            )}
-            <div className={s.pickList}>
-              {filtered.length === 0 && <Caption1>{list.length ? 'No hay equipos con esos filtros.' : 'La sede no tiene equipos en su inventario.'}</Caption1>}
-              {filtered.map((e) => {
-                const already = inService(e);
-                return (
-                  <label key={e.id} className={s.pickRow}>
-                    <Checkbox disabled={already} checked={already || sel.has(e.id)}
-                      onChange={(_, d) => setSel((x) => { const n = new Set(x); if (d.checked) n.add(e.id); else n.delete(e.id); return n; })} />
-                    <Box20Regular />
-                    <div style={{ flex: 1 }}>
-                      <Text weight="semibold" block>{e.code} · {cat.typeName(e.equipment_type_id)} {equipmentLabel(e)}</Text>
-                      <Caption1>{[e.brand, e.model].filter(Boolean).join(' ') || '—'} · S/N {e.serial || '—'}</Caption1>
-                    </div>
-                    {already && <Caption1>ya agregado</Caption1>}
-                  </label>
-                );
-              })}
+            <div className={s.pickTable}>
+              <Table size="small" aria-label="Equipos del inventario">
+                <TableHeader className={s.pickHead}>
+                  <TableRow>
+                    <TableSelectionCell type="checkbox" checked={allState} checkboxIndicator={{ 'aria-label': 'Seleccionar todos' }}
+                      invisible={!free.length}
+                      onClick={() => setSel(allState === true ? new Set() : new Set(free.map((e) => e.id)))} />
+                    <TableHeaderCell>Código</TableHeaderCell>
+                    <TableHeaderCell>Tipo de equipo</TableHeaderCell>
+                    <TableHeaderCell>Capacidad</TableHeaderCell>
+                    <TableHeaderCell className={s.wideOnly}>Marca / Modelo</TableHeaderCell>
+                    <TableHeaderCell className={s.wideOnly}>Serie</TableHeaderCell>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {shown.map((e) => {
+                    const already = inService(e);
+                    const on = already || sel.has(e.id);
+                    return (
+                      <TableRow key={e.id} className={already ? s.pickDone : s.pickRow} aria-selected={on} appearance={sel.has(e.id) ? 'brand' : 'none'}
+                        onClick={() => !already && toggle(e.id)}
+                        onKeyDown={(ev) => { if (!already && (ev.key === ' ' || ev.key === 'Enter')) { ev.preventDefault(); toggle(e.id); } }}
+                        tabIndex={already ? -1 : 0}>
+                        <TableSelectionCell type="checkbox" checked={on} checkboxIndicator={{ 'aria-label': `Seleccionar ${e.code}`, disabled: already }} />
+                        <TableCell><Text weight="semibold">{e.code}</Text>{already && <Caption1> · ya agregado</Caption1>}</TableCell>
+                        <TableCell>{cat.typeName(e.equipment_type_id)}</TableCell>
+                        <TableCell>{equipmentLabel(e) || '—'}</TableCell>
+                        <TableCell className={s.wideOnly}>{[e.brand, e.model].filter(Boolean).join(' / ') || '—'}</TableCell>
+                        <TableCell className={s.wideOnly}>{e.serial || '—'}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              {shown.length === 0 && (
+                <Caption1 block style={{ padding: 12 }}>{list.length ? 'No hay equipos con esos filtros.' : 'La sede no tiene equipos en su inventario.'}</Caption1>
+              )}
             </div>
+            <Caption1 block style={{ marginTop: 8, color: tokens.colorNeutralForeground3 }}>
+              {free.length} disponibles · {sel.size} seleccionados · haz clic en una fila para marcarla
+            </Caption1>
           </DialogContent>
           <DialogActions>
             <Button onClick={onClose}>Cancelar</Button>
