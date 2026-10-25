@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Caption1, Combobox, Option, Textarea, makeStyles, tokens } from '@fluentui/react-components';
 import { Add20Regular, ArrowDown16Regular, ArrowUp16Regular, Delete16Regular } from '@fluentui/react-icons';
 import { supabase } from '../lib/supabase';
+import { ImproveButton } from './ImproveWriting';
 import type { Concept, ConceptKind } from '../lib/types';
 
 const useStyles = makeStyles({
@@ -143,6 +144,7 @@ export function ConceptList({ kind, specialty, items, onChange, readOnly, placeh
             onPick={(t) => { picked.current = true; add(t); }}
             placeholder={placeholder ?? 'Escribe o elige un concepto guardado…'} />
           <Button icon={<Add20Regular />} disabled={!draft.trim()} onClick={() => add(draft)}>Agregar</Button>
+          {items.length > 0 && <ImproveButton texts={items} kind={kind} specialty={specialty} onApply={onChange} label="Mejorar" />}
         </div>
       )}
     </div>

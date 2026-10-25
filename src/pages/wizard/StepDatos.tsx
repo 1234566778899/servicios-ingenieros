@@ -6,6 +6,7 @@ import {
 import { ArrowClockwise16Regular, ArrowRight20Regular } from '@fluentui/react-icons';
 import { AsyncButton, Section, ErrorBar } from '../../components/common';
 import { ConceptList } from '../../components/Concepts';
+import { ImproveButton } from '../../components/ImproveWriting';
 import { DateInput } from '../../components/DateInput';
 import { useAuth } from '../../lib/auth';
 import { optionNames, useCatalogs } from '../../lib/catalogs';
@@ -312,6 +313,10 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                   <span className={s.detail}>
                     Memoria descriptiva {autoDesc ? '(generada · editable)' : '(editada)'}
                     {!autoDesc && <Button size="small" appearance="transparent" icon={<ArrowClockwise16Regular />} onClick={() => setAutoDesc(true)}>Regenerar</Button>}
+                    {!readOnly && (
+                      <ImproveButton size="small" texts={[form.description ?? '']} kind="memoria" specialty={form.specialty}
+                        onApply={([t]) => { setAutoDesc(false); set('description', t); }} />
+                    )}
                   </span>
                 }
               >
