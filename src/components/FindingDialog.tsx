@@ -3,6 +3,7 @@ import {
   Button, Caption1, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown,
   Field, Option, Radio, RadioGroup, Spinner, Textarea, makeStyles,
 } from '@fluentui/react-components';
+import { ImproveButton } from './ImproveWriting';
 import { useCatalogs } from '../lib/catalogs';
 import { supabase, must } from '../lib/supabase';
 import { logActivity, type ServiceBundle } from '../lib/services';
@@ -153,7 +154,15 @@ export function FindingDialog({ open, bundle, initial, onClose, onSaved }: {
             </div>
             {error && <Caption1 style={{ color: 'var(--colorPaletteRedForeground1)', display: 'block', marginTop: 8 }}>{error}</Caption1>}
           </DialogContent>
-          <DialogActions>
+          <DialogActions fluid>
+            <span style={{ marginRight: 'auto' }}>
+              <ImproveButton kind="hallazgo" specialty={bundle.service.specialty}
+                texts={[d.finding || query, d.probable_cause ?? '', d.action_taken ?? '', d.recommendation ?? '']}
+                onApply={([finding, probable_cause, action_taken, recommendation]) => {
+                  setQuery(finding);
+                  setD((x) => ({ ...x, finding, probable_cause, action_taken, recommendation }));
+                }} />
+            </span>
             <Button onClick={onClose} disabled={busy}>Cancelar</Button>
             <Button appearance="primary" onClick={save} disabled={busy}>{busy ? <Spinner size="tiny" /> : 'Guardar hallazgo'}</Button>
           </DialogActions>
