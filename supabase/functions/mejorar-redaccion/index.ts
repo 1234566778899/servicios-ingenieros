@@ -10,7 +10,8 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
-const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-flash-latest';
+// Modelo liviano: responde en ~1 s, suficiente para corregir redacción
+const MODEL = Deno.env.get('GEMINI_MODEL') ?? 'gemini-flash-lite-latest';
 const MAX_TEXTS = 40;
 const MAX_CHARS = 2000;
 
@@ -22,6 +23,7 @@ const KIND: Record<string, string> = {
   conclusion: 'conclusiones',
   observacion: 'observaciones',
   recomendacion: 'recomendaciones',
+  hallazgo: 'un hallazgo de mantenimiento (deficiencia, causa probable, acción realizada y recomendación, en ese orden)',
 };
 
 const instructions = (kind: string, specialty: string) => `Eres corrector de estilo de informes técnicos de Nórdico Ingenieros, empresa peruana de mantenimiento
@@ -32,6 +34,7 @@ Para cada texto devuelve su versión mejorada:
 - Usa español técnico, formal e impersonal ("Se realizó…", "Se recomienda…"), claro y conciso.
 - Conserva exactamente el significado: NO agregues hechos, causas, cantidades ni recomendaciones que no estén en el texto.
 - Conserva sin cambios los números, cantidades, códigos de equipo, marcas, modelos, series, unidades y nombres de tiendas.
+- Los números se quedan en dígitos tal como vienen (4 sigue siendo 4, nunca "cuatro").
 - Escribe las cantidades pequeñas con dos dígitos cuando el texto ya las use así (02, 04).
 - Si el texto ya está bien escrito, devuélvelo igual.
 - Cada texto es un solo párrafo, sin viñetas ni numeración al inicio.

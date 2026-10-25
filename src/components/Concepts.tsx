@@ -144,7 +144,7 @@ export function ConceptList({ kind, specialty, items, onChange, readOnly, placeh
             onPick={(t) => { picked.current = true; add(t); }}
             placeholder={placeholder ?? 'Escribe o elige un concepto guardado…'} />
           <Button icon={<Add20Regular />} disabled={!draft.trim()} onClick={() => add(draft)}>Agregar</Button>
-          {items.length > 0 && <ImproveButton texts={items} kind={kind} specialty={specialty} onApply={onChange} label="Mejorar" />}
+          {items.length > 0 && <ImproveButton texts={items} kind={kind} specialty={specialty} onApply={onChange} />}
         </div>
       )}
     </div>

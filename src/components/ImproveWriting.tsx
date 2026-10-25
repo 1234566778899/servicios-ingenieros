@@ -3,7 +3,7 @@ import {
   Button, Caption1, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Spinner, Text,
   Tooltip, makeStyles, tokens,
 } from '@fluentui/react-components';
-import { Sparkle20Regular } from '@fluentui/react-icons';
+import { Wand20Regular } from '@fluentui/react-icons';
 import { supabase } from '../lib/supabase';
 import { useNotify } from '../lib/toast';
 
@@ -29,9 +29,9 @@ export async function improveWriting(texts: string[], kind: string, specialty: s
  * Botón "Mejorar redacción": muestra cada texto con su versión sugerida para aceptarla o no.
  * Nunca reemplaza sin revisión: el informe lo firma la empresa.
  */
-export function ImproveButton({ texts, kind, specialty, onApply, size = 'medium', label = 'Mejorar redacción' }: {
+export function ImproveButton({ texts, kind, specialty, onApply, size = 'medium' }: {
   texts: string[]; kind: string; specialty: string; onApply: (texts: string[]) => void;
-  size?: 'small' | 'medium'; label?: string;
+  size?: 'small' | 'medium';
 }) {
   const s = useStyles();
   const notify = useNotify();
@@ -63,10 +63,9 @@ export function ImproveButton({ texts, kind, specialty, onApply, size = 'medium'
 
   return (
     <>
-      <Tooltip content="Corrige ortografía y redacción con IA (Gemini). Revisas cada cambio antes de aplicarlo." relationship="description">
-        <Button size={size} icon={busy ? <Spinner size="tiny" /> : <Sparkle20Regular />} disabled={busy || !usable.length} onClick={run}>
-          {busy ? 'Mejorando…' : label}
-        </Button>
+      <Tooltip content="Mejorar redacción con IA" relationship="label">
+        <Button size={size} appearance="subtle" icon={busy ? <Spinner size="tiny" /> : <Wand20Regular />}
+          disabled={busy || !usable.length} onClick={run} />
       </Tooltip>
       <Dialog open={!!result} onOpenChange={(_, d) => !d.open && setResult(null)}>
         <DialogSurface style={{ maxWidth: 760 }}>

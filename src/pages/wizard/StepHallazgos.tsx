@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Button, Caption1, Field, MessageBar, MessageBarBody, Table, TableBody, TableCell, TableHeader, TableHeaderCell,
-  TableRow, Text, makeStyles, tokens,
+  TableRow, Text, Tooltip, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Add20Regular, ArrowClockwise20Regular, ArrowLeft20Regular, ArrowRight20Regular, Delete20Regular, Edit20Regular } from '@fluentui/react-icons';
 import { AsyncButton, Section, StatusBadge } from '../../components/common';
@@ -147,7 +147,9 @@ export function StepHallazgos({ bundle, reload, readOnly, goTo, registerSave }: 
         subtitle={manual ? 'Editadas manualmente' : 'Vista previa · se generan a partir de los hallazgos'}
         actions={!readOnly && (
           manual ? (
-            <Button icon={<ArrowClockwise20Regular />} onClick={() => setManual(false)}>Regenerar texto</Button>
+            <Tooltip content="Regenerar desde los hallazgos" relationship="label">
+              <Button appearance="subtle" icon={<ArrowClockwise20Regular />} onClick={() => setManual(false)} />
+            </Tooltip>
           ) : (
             <Button icon={<Edit20Regular />} onClick={() => { setConclusions(splitLines(genC)); setRecommendations(splitLines(genR)); setManual(true); }}>Editar manualmente</Button>
           )

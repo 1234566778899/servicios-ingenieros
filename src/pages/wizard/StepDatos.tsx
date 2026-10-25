@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Caption1, Dropdown, Field, Input, Option, Radio, RadioGroup, Text, Textarea,
+  Button, Caption1, Dropdown, Field, Input, Option, Radio, RadioGroup, Text, Textarea, Tooltip,
   Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { ArrowClockwise16Regular, ArrowRight20Regular } from '@fluentui/react-icons';
@@ -301,7 +301,11 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                 label={
                   <span className={s.detail}>
                     Título de portada {autoTitle ? '(automático)' : '(editado)'}
-                    {!autoTitle && <Button size="small" appearance="transparent" icon={<ArrowClockwise16Regular />} onClick={() => setAutoTitle(true)}>Restaurar</Button>}
+                    {!autoTitle && (
+                      <Tooltip content="Restaurar título automático" relationship="label">
+                        <Button size="small" appearance="subtle" icon={<ArrowClockwise16Regular />} onClick={() => setAutoTitle(true)} />
+                      </Tooltip>
+                    )}
                   </span>
                 }
               >
@@ -312,7 +316,11 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                 label={
                   <span className={s.detail}>
                     Memoria descriptiva {autoDesc ? '(generada · editable)' : '(editada)'}
-                    {!autoDesc && <Button size="small" appearance="transparent" icon={<ArrowClockwise16Regular />} onClick={() => setAutoDesc(true)}>Regenerar</Button>}
+                    {!autoDesc && (
+                      <Tooltip content="Regenerar memoria descriptiva" relationship="label">
+                        <Button size="small" appearance="subtle" icon={<ArrowClockwise16Regular />} onClick={() => setAutoDesc(true)} />
+                      </Tooltip>
+                    )}
                     {!readOnly && (
                       <ImproveButton size="small" texts={[form.description ?? '']} kind="memoria" specialty={form.specialty}
                         onApply={([t]) => { setAutoDesc(false); set('description', t); }} />
