@@ -29,9 +29,9 @@ export async function improveWriting(texts: string[], kind: string, specialty: s
  * Botón "Mejorar redacción": muestra cada texto con su versión sugerida para aceptarla o no.
  * Nunca reemplaza sin revisión: el informe lo firma la empresa.
  */
-export function ImproveButton({ texts, kind, specialty, onApply, size = 'medium' }: {
+export function ImproveButton({ texts, kind, specialty, onApply, size = 'medium', tooltip = 'Mejorar redacción con IA' }: {
   texts: string[]; kind: string; specialty: string; onApply: (texts: string[]) => void;
-  size?: 'small' | 'medium';
+  size?: 'small' | 'medium'; tooltip?: string;
 }) {
   const s = useStyles();
   const notify = useNotify();
@@ -63,7 +63,7 @@ export function ImproveButton({ texts, kind, specialty, onApply, size = 'medium'
 
   return (
     <>
-      <Tooltip content="Mejorar redacción con IA" relationship="label">
+      <Tooltip content={tooltip} relationship="label">
         <Button size={size} appearance="subtle" icon={busy ? <Spinner size="tiny" /> : <Wand20Regular />}
           disabled={busy || !usable.length} onClick={run} />
       </Tooltip>

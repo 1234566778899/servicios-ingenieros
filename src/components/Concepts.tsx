@@ -144,7 +144,12 @@ export function ConceptList({ kind, specialty, items, onChange, readOnly, placeh
             onPick={(t) => { picked.current = true; add(t); }}
             placeholder={placeholder ?? 'Escribe o elige un concepto guardado…'} />
           <Button icon={<Add20Regular />} disabled={!draft.trim()} onClick={() => add(draft)}>Agregar</Button>
-          {items.length > 0 && <ImproveButton texts={items} kind={kind} specialty={specialty} onApply={onChange} />}
+          {/* Con texto en el campo se mejora ese borrador; si está vacío, la lista ya agregada */}
+          {draft.trim()
+            ? <ImproveButton texts={[draft]} kind={kind} specialty={specialty} onApply={([t]) => setDraft(t)}
+                tooltip="Mejorar redacción del texto que estás escribiendo" />
+            : items.length > 0 && <ImproveButton texts={items} kind={kind} specialty={specialty} onApply={onChange}
+                tooltip="Mejorar redacción de la lista" />}
         </div>
       )}
     </div>
