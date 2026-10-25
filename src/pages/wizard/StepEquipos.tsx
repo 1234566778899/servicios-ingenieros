@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Button, Caption1, Checkbox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle,
-  Dropdown, Field, Input, MessageBar, MessageBarBody, Option, Spinner, Table, TableBody, TableCell, TableHeader,
+  Dropdown, Field, Input, MessageBar, MessageBarActions, MessageBarBody, Option, Spinner, Table, TableBody, TableCell, TableHeader,
   TableHeaderCell, TableRow, Text, makeStyles, tokens,
 } from '@fluentui/react-components';
 import {
@@ -10,12 +10,14 @@ import {
 import { AsyncButton, Section, StatusBadge } from '../../components/common';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { EquipmentDialog, type EquipmentForm } from '../../components/EquipmentDialog';
+import { useAuth } from '../../lib/auth';
 import { useCatalogs } from '../../lib/catalogs';
 import { supabase, must } from '../../lib/supabase';
-import { currentTemplateId, equipmentLabel, logActivity } from '../../lib/services';
+import { addInventoryToService, currentTemplateId, equipmentLabel, loadSiteInventory, logActivity } from '../../lib/services';
 import { equipmentSummary } from '../../lib/texts';
+import { useAsync } from '../../lib/useAsync';
 import { useNotify } from '../../lib/toast';
-import type { ServiceEquipment } from '../../lib/types';
+import type { ServiceEquipment, SiteEquipment } from '../../lib/types';
 import type { StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
@@ -25,14 +27,22 @@ const useStyles = makeStyles({
   pickRow: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', borderRadius: tokens.borderRadiusMedium, ':hover': { backgroundColor: tokens.colorNeutralBackground1Hover } },
 });
 
-type Existing = ServiceEquipment & { services: { site_id: string; execution_date: string } };
+/** Campos que se copian entre el inventario de la sede y el equipo del servicio */
+const master = (f: EquipmentForm) => ({
+  code: f.code!, equipment_type_id: f.equipment_type_id, capacity: f.capacity, unit: f.unit, brand: f.brand, model: f.model, serial: f.serial,
+});
 
 export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
   const s = useStyles();
   const cat = useCatalogs();
+  const { can } = useAuth();
   const notify = useNotify();
   const svc = bundle.service;
   const site = cat.sites.find((x) => x.id === svc.site_id);
+  const canInventory = can('equipos.gestionar');
+  const { data: inventory, reload: reloadInventory } = useAsync(() => loadSiteInventory(svc.site_id), [svc.site_id]);
+  const inService = (e: SiteEquipment) => bundle.equipment.some((x) => x.site_equipment_id === e.id || x.code === e.code);
+  const missing = (inventory ?? []).filter((e) => !inService(e));
   const [newOpen, setNewOpen] = useState(false);
   const [editing, setEditing] = useState<ServiceEquipment | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
@@ -44,26 +54,42 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
     return m;
   }, [bundle.equipment, cat]);
 
-  const add = async (rows: EquipmentForm[]) => {
-    let pos = Math.max(0, ...bundle.equipment.map((e) => e.position));
-    const payload = await Promise.all(
-      rows.map(async (r) => ({
-        ...r,
-        service_id: svc.id,
-        position: ++pos,
-        checklist_template_id: await currentTemplateId(r.equipment_type_id),
-      })),
-    );
-    must(await supabase.from('service_equipment').insert(payload));
-    await logActivity(svc.id, `agregó equipo${rows.length > 1 ? 's' : ''} ${rows.map((r) => r.code).join(', ')}`);
-    notify(rows.length > 1 ? `${rows.length} equipos agregados` : `Equipo ${rows[0].code} agregado`);
+  const maxPos = Math.max(0, ...bundle.equipment.map((e) => e.position));
+
+  const addFromInventory = async (list: SiteEquipment[]) => {
+    await addInventoryToService(svc.id, list, maxPos);
+    await logActivity(svc.id, `agregó equipo${list.length > 1 ? 's' : ''} ${list.map((r) => r.code).join(', ')}`);
+    notify(list.length > 1 ? `${list.length} equipos agregados` : `Equipo ${list[0].code} agregado`);
     await reload();
   };
 
-  const saveEdit = async (f: EquipmentForm) => {
-    const tpl = f.equipment_type_id !== editing!.equipment_type_id ? await currentTemplateId(f.equipment_type_id) : editing!.checklist_template_id;
-    must(await supabase.from('service_equipment').update({ ...f, checklist_template_id: tpl }).eq('id', editing!.id));
-    notify(`Equipo ${f.code} actualizado`);
+  /** Equipo nuevo: se agrega al servicio y, si corresponde, al inventario de la sede. */
+  const addNew = async (f: EquipmentForm, toInventory: boolean) => {
+    let siteEquipmentId: string | null = null;
+    if (toInventory) {
+      const pos = Math.max(0, ...(inventory ?? []).map((e) => e.position)) + 1;
+      const row = must(await supabase.from('site_equipment')
+        .insert({ ...master(f), site_id: svc.site_id, location: f.observation, position: pos }).select('id').single()) as { id: string };
+      siteEquipmentId = row.id;
+    }
+    must(await supabase.from('service_equipment').insert({
+      ...f, service_id: svc.id, site_equipment_id: siteEquipmentId, position: maxPos + 1,
+      checklist_template_id: await currentTemplateId(f.equipment_type_id),
+    }));
+    await logActivity(svc.id, `agregó el equipo ${f.code}${toInventory ? ' (nuevo en el inventario de la sede)' : ''}`);
+    notify(`Equipo ${f.code} agregado`, 'success', toInventory ? `También quedó registrado en el inventario de ${site?.name}.` : undefined);
+    reloadInventory();
+    await reload();
+  };
+
+  const saveEdit = async (f: EquipmentForm, toInventory: boolean) => {
+    const e = editing!;
+    const tpl = f.equipment_type_id !== e.equipment_type_id ? await currentTemplateId(f.equipment_type_id) : e.checklist_template_id;
+    must(await supabase.from('service_equipment').update({ ...f, checklist_template_id: tpl }).eq('id', e.id));
+    // Cambio de serie, reemplazo de equipo, etc.: se corrige también en el inventario para los próximos servicios
+    if (toInventory && e.site_equipment_id) must(await supabase.from('site_equipment').update(master(f)).eq('id', e.site_equipment_id));
+    notify(`Equipo ${f.code} actualizado`, 'success', toInventory && e.site_equipment_id ? 'Inventario de la sede actualizado.' : undefined);
+    if (toInventory) reloadInventory();
     await reload();
   };
 
@@ -92,11 +118,25 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
         subtitle={`${bundle.equipment.length} equipos · ${cat.siteName(svc.site_id)} · sección 3 del informe`}
         actions={!readOnly && (
           <>
-            <Button icon={<Search20Regular />} onClick={() => setPickOpen(true)}>Agregar equipo existente</Button>
+            <Button icon={<Search20Regular />} onClick={() => setPickOpen(true)}>Agregar del inventario</Button>
             <Button appearance="primary" icon={<Add20Regular />} onClick={() => setNewOpen(true)}>Registrar equipo nuevo</Button>
           </>
         )}
       >
+        {!readOnly && missing.length > 0 && (
+          <MessageBar intent="info" style={{ marginBottom: 12 }}>
+            <MessageBarBody>
+              {bundle.equipment.length
+                ? `${missing.length} equipo(s) del inventario de ${site?.name} no están en este servicio.`
+                : `${site?.name} tiene ${missing.length} equipos registrados en su inventario.`}
+            </MessageBarBody>
+            <MessageBarActions>
+              <Button size="small" onClick={() => addFromInventory(missing)}>
+                {bundle.equipment.length ? 'Agregar los que faltan' : `Cargar los ${missing.length} equipos`}
+              </Button>
+            </MessageBarActions>
+          </MessageBar>
+        )}
         <Table size="small">
           <TableHeader>
             <TableRow>
@@ -134,9 +174,13 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
             ))}
           </TableBody>
         </Table>
-        {bundle.equipment.length === 0 && (
+        {bundle.equipment.length === 0 && !missing.length && (
           <MessageBar style={{ marginTop: 12 }}>
-            <MessageBarBody>Agrega los equipos intervenidos en este servicio. Puedes reutilizar los ya registrados en la sede.</MessageBarBody>
+            <MessageBarBody>
+              {inventory?.length === 0
+                ? `${site?.name} aún no tiene equipos en su inventario. Registra los equipos intervenidos: quedarán guardados para los próximos servicios.`
+                : 'Agrega los equipos intervenidos en este servicio.'}
+            </MessageBarBody>
           </MessageBar>
         )}
         {bundle.equipment.length > 0 && (
@@ -148,18 +192,20 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
         )}
       </Section>
       <div className={s.footer}>
-        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(1)}>Anterior</AsyncButton>
-        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" disabled={!bundle.equipment.length} onClick={() => goTo(3)}>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo('datos')}>Anterior</AsyncButton>
+        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" disabled={!bundle.equipment.length} onClick={() => goTo('checklist')}>
           Siguiente: Checklist
         </AsyncButton>
       </div>
 
-      <EquipmentDialog open={newOpen} title="Registrar equipo nuevo" sitePrefix={site?.equipment_prefix}
-        onSave={(f) => add([f])} onClose={() => setNewOpen(false)} />
+      <EquipmentDialog open={newOpen} title="Registrar equipo nuevo" siteId={svc.site_id} sitePrefix={site?.equipment_prefix}
+        syncLabel={canInventory ? `Guardarlo también en el inventario de ${site?.name}` : undefined}
+        onSave={addNew} onClose={() => setNewOpen(false)} />
       <EquipmentDialog open={!!editing} title={`Editar ${editing?.code}`} initial={editing ?? undefined}
+        syncLabel={canInventory && editing?.site_equipment_id ? 'Actualizar también el inventario de la sede (código, tipo, marca, modelo y serie)' : undefined}
         onSave={saveEdit} onClose={() => setEditing(null)} />
-      <PickExisting open={pickOpen} siteId={svc.site_id} exclude={bundle.equipment.map((e) => e.code!)}
-        onAdd={add} onClose={() => setPickOpen(false)} />
+      <PickInventory open={pickOpen} list={inventory ?? []} inService={inService} siteName={site?.name ?? ''}
+        onAdd={addFromInventory} onClose={() => setPickOpen(false)} />
       <ConfirmDialog
         open={!!toRemove}
         title={`¿Quitar ${toRemove?.code} del servicio?`}
@@ -178,44 +224,28 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
   );
 }
 
-function PickExisting({ open, siteId, exclude, onAdd, onClose }: {
-  open: boolean; siteId: string; exclude: string[]; onAdd: (rows: EquipmentForm[]) => Promise<void>; onClose: () => void;
+function PickInventory({ open, list, inService, siteName, onAdd, onClose }: {
+  open: boolean; list: SiteEquipment[]; inService: (e: SiteEquipment) => boolean; siteName: string;
+  onAdd: (rows: SiteEquipment[]) => Promise<void>; onClose: () => void;
 }) {
   const s = useStyles();
   const cat = useCatalogs();
-  const [site, setSite] = useState(siteId);
   const [type, setType] = useState('');
   const [q, setQ] = useState('');
-  const [list, setList] = useState<Existing[] | null>(null);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
 
-  const load = async (siteFilter: string) => {
-    setList(null);
-    const { data } = await supabase
-      .from('service_equipment')
-      .select('*, services!inner(site_id, execution_date)')
-      .eq('services.site_id', siteFilter)
-      .order('created_at', { ascending: false });
-    // Un equipo aparece en varios servicios: nos quedamos con su registro más reciente
-    const seen = new Map<string, Existing>();
-    for (const r of (data ?? []) as Existing[]) if (r.code && !seen.has(r.code)) seen.set(r.code, r);
-    setList([...seen.values()].sort((a, b) => a.code!.localeCompare(b.code!)));
-  };
-
   useEffect(() => {
-    if (!open) return;
-    setSel(new Set());
-    setSite(siteId);
-    load(siteId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, siteId]);
+    if (open) setSel(new Set());
+  }, [open]);
 
-  const filtered = (list ?? []).filter(
+  const types = [...new Set(list.map((e) => e.equipment_type_id).filter(Boolean) as string[])];
+  const filtered = list.filter(
     (e) =>
       (!type || e.equipment_type_id === type) &&
-      (!q || `${e.code} ${e.serial} ${cat.typeName(e.equipment_type_id)}`.toLowerCase().includes(q.toLowerCase())),
+      (!q || `${e.code} ${e.serial} ${e.brand} ${e.model} ${cat.typeName(e.equipment_type_id)}`.toLowerCase().includes(q.toLowerCase())),
   );
+  const free = filtered.filter((e) => !inService(e));
 
   return (
     <Dialog open={open} onOpenChange={(_, d) => {
@@ -223,29 +253,27 @@ function PickExisting({ open, siteId, exclude, onAdd, onClose }: {
     }}>
       <DialogSurface style={{ maxWidth: 760 }}>
         <DialogBody>
-          <DialogTitle>Agregar equipo existente</DialogTitle>
+          <DialogTitle>Agregar del inventario · {siteName}</DialogTitle>
           <DialogContent>
-            <Caption1 block>Busca equipos ya registrados para reutilizarlos en este servicio.</Caption1>
-            <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 200px 180px', gap: 8, marginTop: 12 }}>
-              <Field label="Buscar"><Input contentBefore={<Search20Regular />} placeholder="Código, serie o nombre…" value={q} onChange={(_, d) => setQ(d.value)} /></Field>
-              <Field label="Tienda / Sede">
-                <Dropdown value={cat.siteName(site)} selectedOptions={[site]} style={{ minWidth: 0 }}
-                  onOptionSelect={(_, d) => { setSite(d.optionValue!); load(d.optionValue!); }}>
-                  {cat.sites.map((x) => <Option key={x.id} value={x.id}>{x.name}</Option>)}
-                </Dropdown>
-              </Field>
+            <Caption1 block>Equipos registrados en la sede. Los cambios de serie o reemplazos se corrigen en Equipos o al editar el equipo en el servicio.</Caption1>
+            <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 220px', gap: 8, marginTop: 12 }}>
+              <Field label="Buscar"><Input contentBefore={<Search20Regular />} placeholder="Código, serie, marca…" value={q} onChange={(_, d) => setQ(d.value)} /></Field>
               <Field label="Tipo de equipo">
                 <Dropdown value={type ? cat.typeName(type) : 'Todos'} selectedOptions={[type]} style={{ minWidth: 0 }} onOptionSelect={(_, d) => setType(d.optionValue ?? '')}>
                   <Option value="">Todos</Option>
-                  {cat.equipmentTypes.map((t) => <Option key={t.id} value={t.id}>{t.name}</Option>)}
+                  {types.map((t) => <Option key={t} value={t}>{cat.typeName(t)}</Option>)}
                 </Dropdown>
               </Field>
             </div>
+            {free.length > 1 && (
+              <Checkbox style={{ marginTop: 8 }} label={`Seleccionar todos (${free.length})`}
+                checked={free.every((e) => sel.has(e.id)) ? true : free.some((e) => sel.has(e.id)) ? 'mixed' : false}
+                onChange={(_, d) => setSel(d.checked === true ? new Set(free.map((e) => e.id)) : new Set())} />
+            )}
             <div className={s.pickList}>
-              {list === null && <Spinner size="small" />}
-              {list && filtered.length === 0 && <Caption1>No hay equipos registrados con esos filtros.</Caption1>}
+              {filtered.length === 0 && <Caption1>{list.length ? 'No hay equipos con esos filtros.' : 'La sede no tiene equipos en su inventario.'}</Caption1>}
               {filtered.map((e) => {
-                const already = exclude.includes(e.code!);
+                const already = inService(e);
                 return (
                   <label key={e.id} className={s.pickRow}>
                     <Checkbox disabled={already} checked={already || sel.has(e.id)}
@@ -253,7 +281,7 @@ function PickExisting({ open, siteId, exclude, onAdd, onClose }: {
                     <Box20Regular />
                     <div style={{ flex: 1 }}>
                       <Text weight="semibold" block>{e.code} · {cat.typeName(e.equipment_type_id)} {equipmentLabel(e)}</Text>
-                      <Caption1>{[e.brand, e.model].filter(Boolean).join(' ')} · S/N {e.serial || '—'}</Caption1>
+                      <Caption1>{[e.brand, e.model].filter(Boolean).join(' ') || '—'} · S/N {e.serial || '—'}</Caption1>
                     </div>
                     {already && <Caption1>ya agregado</Caption1>}
                   </label>
@@ -267,10 +295,7 @@ function PickExisting({ open, siteId, exclude, onAdd, onClose }: {
               onClick={async () => {
                 setBusy(true);
                 try {
-                  await onAdd((list ?? []).filter((e) => sel.has(e.id)).map((e) => ({
-                    code: e.code, equipment_type_id: e.equipment_type_id, capacity: e.capacity, unit: e.unit,
-                    brand: e.brand, model: e.model, serial: e.serial, observation: null,
-                  })));
+                  await onAdd(list.filter((e) => sel.has(e.id)));
                   onClose();
                 } finally {
                   setBusy(false);

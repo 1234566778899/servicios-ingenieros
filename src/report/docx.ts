@@ -79,41 +79,105 @@ function headerTable(m: ReportModel) {
   });
 }
 
-/** Ajusta la foto a una caja de 170×125 px conservando la proporción. */
-function img(i: ReportImage) {
-  const scale = Math.min(170 / i.width, 125 / i.height);
+/** Ajusta la foto a una caja (170×125 px por defecto) conservando la proporción. */
+function img(i: ReportImage, boxW = 170, boxH = 125) {
+  const scale = Math.min(boxW / i.width, boxH / i.height);
   return new ImageRun({ type: 'jpg', data: i.bytes, transformation: { width: Math.round(i.width * scale), height: Math.round(i.height * scale) } });
 }
 
-export async function renderReportDocx(m: ReportModel): Promise<Uint8Array> {
-  const has = (k: string) => m.sections.includes(k);
-  const body: (Paragraph | Table)[] = [];
+function coverParagraphs(m: ReportModel) {
+  return [
+    new Paragraph({ spacing: { before: 2000, after: 800 }, alignment: AlignmentType.CENTER, children: [logoRun(400)] }),
+    ...m.coverTitle.split(' · ').map((t) => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text: t, bold: true, size: 36, color: BLUE, font: 'Arial' })] })),
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [new TextRun({ text: `${m.clientName} · ${m.site?.name ?? ''}`, size: 22, font: 'Arial' })] }),
+    p(m.executionDate, { align: AlignmentType.CENTER, size: 22 }),
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [new TextRun({ text: 'NÓRDICO INGENIEROS', bold: true, size: 22, font: 'Arial' })] }),
+    p(`INFORME TÉCNICO · ${m.serviceCode}`, { align: AlignmentType.CENTER, size: 22 }),
+  ];
+}
 
-  if (has('portada')) {
-    body.push(
-      new Paragraph({ spacing: { before: 2000, after: 800 }, alignment: AlignmentType.CENTER, children: [logoRun(400)] }),
-      ...m.coverTitle.split(' · ').map((t) => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text: t, bold: true, size: 36, color: BLUE, font: 'Arial' })] })),
-      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [new TextRun({ text: `${m.clientName} · ${m.site?.name ?? ''}`, size: 22, font: 'Arial' })] }),
-      p(m.executionDate, { align: AlignmentType.CENTER, size: 22 }),
-      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [new TextRun({ text: 'NÓRDICO INGENIEROS', bold: true, size: 22, font: 'Arial' })] }),
-      p(`INFORME TÉCNICO · ${m.serviceCode}`, { align: AlignmentType.CENTER, size: 22 }),
-    );
-  }
-  const afterCover = has('portada');
-
-  if (has('memoria')) {
-    body.push(h2('1. MEMORIA DESCRIPTIVA', afterCover), p(m.description));
-    const kv: [string, string][] = [
-      ['Cliente', m.clientName], ['Tienda / Sede', m.site?.name ?? ''], ['Dirección', m.site?.address ?? '—'],
-      ['Tipo de servicio', m.serviceType], ['Fecha de ejecución', m.executionDate], ['Orden de trabajo', m.workOrder],
-      ['Técnico responsable', m.leadTech], ['Técnicos de apoyo', m.supportTechs],
-    ];
-    body.push(new Table({
+function memoriaBlocks(m: ReportModel, n: number, pageBreakBefore: boolean) {
+  const kv: [string, string][] = [
+    ['Cliente', m.clientName], ['Tienda / Sede', m.site?.name ?? ''], ['Dirección', m.site?.address ?? '—'],
+    ['Tipo de servicio', m.serviceType], ['Fecha de ejecución', m.executionDate], ['Orden de trabajo', m.workOrder],
+    ['Técnico responsable', m.leadTech], ['Técnicos de apoyo', m.supportTechs],
+  ];
+  return [
+    h2(`${n}. MEMORIA DESCRIPTIVA`, pageBreakBefore), p(m.description),
+    new Table({
       width: { size: CONTENT, type: WidthType.DXA },
       columnWidths: [32, 68].map(dxa),
       rows: kv.map(([k, v]) => new TableRow({ children: [cell(k, { shade: 'F3F3F3', width: 32 }), cell(v, { width: 68 })] })),
-    }));
+    }),
+  ];
+}
+
+const bullets = (xs: string[]) => (xs.length ? xs : ['—']).map((d) => p(`•  ${d}`));
+
+/** Servicio sin equipos: secciones numeradas según lo que tenga y fotos por sección (2 por fila). */
+function serviceBody(m: ReportModel) {
+  const has = (k: string) => m.sections.includes(k);
+  const body: (Paragraph | Table)[] = [];
+  let n = 0;
+  if (has('portada')) body.push(...coverParagraphs(m));
+  if (has('memoria')) body.push(...memoriaBlocks(m, ++n, has('portada')));
+  if (has('detalles')) {
+    body.push(h2(`${++n}. DETALLES PREVIOS`, has('portada') && !has('memoria')), ...bullets(m.prevDetails));
+    if (m.workItems.length) body.push(h2(`${++n}. TRABAJOS REALIZADOS`), ...bullets(m.workItems));
   }
+  const groups = m.photoGroups.filter((g) => g.rows.length);
+  if (has('fotos') && groups.length) {
+    const sec = ++n;
+    groups.forEach((g, i) => {
+      if (i === 0) body.push(h2(`${sec}. REGISTRO FOTOGRÁFICO`, true));
+      body.push(h3(`${sec}.${i + 1}. ${g.title}`, i > 0));
+      body.push(new Table({
+        width: { size: CONTENT, type: WidthType.DXA },
+        columnWidths: [50, 50].map(dxa),
+        rows: g.rows.map((row) => new TableRow({
+          cantSplit: true,
+          children: row.map((im) => cell(im
+            ? [
+                new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, 290, 215)] }),
+                new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] }),
+              ]
+            : [new Paragraph({ text: '' })], { width: 50 })),
+        })),
+      }));
+      if (g.description) body.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 120 }, children: [new TextRun({ text: g.description, bold: true, size: 19, font: 'Arial' })] }));
+    });
+  }
+  if (has('conclusiones')) {
+    body.push(h2(`${++n}. CONCLUSIONES`, true), ...bullets(m.conclusions));
+    if (m.observations.length) body.push(h2(`${++n}. OBSERVACIONES`), ...bullets(m.observations));
+    body.push(h2(`${++n}. RECOMENDACIONES`), ...bullets(m.recommendations));
+  }
+  return body;
+}
+
+export async function renderReportDocx(m: ReportModel): Promise<Uint8Array> {
+  const body = m.withEquipment ? equipmentBody(m) : serviceBody(m);
+  const doc = new Document({
+    creator: 'Nordico Ingenieros',
+    title: m.baseName,
+    styles: { default: { document: { run: { font: 'Arial', size: 19 } } } },
+    sections: [{
+      properties: { page: { margin: { top: 720, bottom: 720, left: 900, right: 900 } } },
+      headers: { default: new Header({ children: [headerTable(m), new Paragraph({ text: '' })] }) },
+      children: body,
+    }],
+  });
+  const blob = await Packer.toBlob(doc);
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+function equipmentBody(m: ReportModel) {
+  const has = (k: string) => m.sections.includes(k);
+  const body: (Paragraph | Table)[] = [];
+  if (has('portada')) body.push(...coverParagraphs(m));
+  const afterCover = has('portada');
+
+  if (has('memoria')) body.push(...memoriaBlocks(m, 1, afterCover));
   if (has('detalles')) {
     body.push(h2('2. DETALLES PREVIOS'), ...m.prevDetails.map((d) => p(`•  ${d}`)), p(`•  ${m.equipmentSummary}`));
   }
@@ -173,17 +237,5 @@ export async function renderReportDocx(m: ReportModel): Promise<Uint8Array> {
     body.push(h2('7. CONCLUSIONES Y RECOMENDACIONES', !has('hallazgos')), h3('Conclusiones'), ...(m.conclusions.length ? m.conclusions : ['—']).map((c) => p(c)),
       h3('Recomendaciones'), ...(m.recommendations.length ? m.recommendations : ['—']).map((c) => p(c)));
   }
-
-  const doc = new Document({
-    creator: 'Nordico Ingenieros',
-    title: m.baseName,
-    styles: { default: { document: { run: { font: 'Arial', size: 19 } } } },
-    sections: [{
-      properties: { page: { margin: { top: 720, bottom: 720, left: 900, right: 900 } } },
-      headers: { default: new Header({ children: [headerTable(m), new Paragraph({ text: '' })] }) },
-      children: body,
-    }],
-  });
-  const blob = await Packer.toBlob(doc);
-  return new Uint8Array(await blob.arrayBuffer());
+  return body;
 }

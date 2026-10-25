@@ -5,13 +5,15 @@ const num2 = (n: number) => String(n).padStart(2, '0');
 /** "Mantenimiento preventivo" → "mantenimiento preventivo" */
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
-export function coverTitle(serviceType: string, specialty: string, site?: Site | null) {
-  return `SERVICIO DE ${serviceType.toUpperCase()} DE EQUIPO DE ${specialty.toUpperCase()} · TIENDA (${(site?.name ?? '').toUpperCase()})`;
+export function coverTitle(serviceType: string, specialty: string, site?: Site | null, withEquipment = true) {
+  const what = withEquipment ? `DE EQUIPO DE ${specialty.toUpperCase()}` : `DE ${specialty.toUpperCase()}`;
+  return `SERVICIO DE ${serviceType.toUpperCase()} ${what} · TIENDA (${(site?.name ?? '').toUpperCase()})`;
 }
 
-export function memoria(serviceType: string, specialty: string, site?: Site | null) {
+export function memoria(serviceType: string, specialty: string, site?: Site | null, withEquipment = true) {
   const name = (site?.name ?? '').toUpperCase();
-  return `El presente informe corresponde al servicio de ${lower(serviceType)} de equipos de ${lower(specialty)} para la tienda ${name}, ubicado en ${site?.address ?? '—'}.`;
+  const what = withEquipment ? `de equipos de ${lower(specialty)}` : `de ${lower(specialty)}`;
+  return `El presente informe corresponde al servicio de ${lower(serviceType)} ${what} para la tienda ${name}, ubicado en ${site?.address ?? '—'}.`;
 }
 
 export function equipmentSummary(serviceType: string, equipment: ServiceEquipment[], typeName: (id?: string | null) => string) {

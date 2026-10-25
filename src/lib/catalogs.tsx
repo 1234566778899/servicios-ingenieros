@@ -17,6 +17,8 @@ interface Catalogs {
   siteName: (id?: string | null) => string;
   typeName: (id?: string | null) => string;
   userName: (id?: string | null) => string;
+  /** La especialidad lleva lista de equipos, checklist y hallazgos (p. ej. aire acondicionado). */
+  hasEquipment: (specialty?: string | null) => boolean;
 }
 
 const Ctx = createContext<Catalogs>(null as any);
@@ -66,6 +68,7 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
         siteName: by(sites, 'name'),
         typeName: by(equipmentTypes, 'name'),
         userName: by(users, 'full_name'),
+        hasEquipment: (name) => !!specialties.find((x) => x.name === name)?.has_equipment,
       }}
     >
       {children}

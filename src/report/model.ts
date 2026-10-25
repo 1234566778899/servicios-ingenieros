@@ -1,5 +1,5 @@
 import type { ServiceBundle } from '../lib/services';
-import { downloadBytes, equipmentLabel } from '../lib/services';
+import { downloadBytes, equipmentLabel, splitLines, usesEquipment } from '../lib/services';
 import { equipmentSummary, conclusionsFrom, recommendationsFrom } from '../lib/texts';
 import { fmtDate } from '../lib/format';
 import { STAGES, type ReportTemplate, type Site } from '../lib/types';
@@ -7,6 +7,8 @@ import { STAGES, type ReportTemplate, type Site } from '../lib/types';
 export interface ReportImage { bytes: Uint8Array; dataUrl: string; width: number; height: number; caption: string }
 
 export interface ReportModel {
+  /** false: servicio sin equipos (trabajos realizados + fotos por sección + observaciones) */
+  withEquipment: boolean;
   template: { code: string; name: string; version: string; issueDate: string };
   coverTitle: string;
   serviceType: string;
@@ -27,7 +29,11 @@ export interface ReportModel {
     photos: { stage: string; rows: (ReportImage | null)[][] }[];
   }[];
   findings: { n: number; code: string; finding: string; cause: string; action: string; recommendation: string; priority: string }[];
+  workItems: string[];
+  /** Secciones del registro fotográfico, en filas de 2 fotos */
+  photoGroups: { title: string; description: string; rows: (ReportImage | null)[][] }[];
   conclusions: string[];
+  observations: string[];
   recommendations: string[];
   sections: string[];
   baseName: string;
@@ -57,7 +63,7 @@ export async function buildReportModel(
   issueDate: string,
   names: {
     clientName: (id?: string | null) => string; typeName: (id?: string | null) => string;
-    userName: (id?: string | null) => string; site?: Site;
+    userName: (id?: string | null) => string; hasEquipment: (specialty: string) => boolean; site?: Site;
   },
   onProgress?: (done: number, total: number) => void,
 ): Promise<ReportModel> {
@@ -65,6 +71,21 @@ export async function buildReportModel(
   const codeOf = (id: string) => b.equipment.find((e) => e.id === id)?.code ?? '—';
   let done = 0;
   const total = b.photos.length;
+  const withEquipment = usesEquipment(b, names.hasEquipment);
+  const image = async (p: { storage_path: string; caption: string | null }) => {
+    const img = await loadImage(p.storage_path, p.caption ?? '');
+    onProgress?.(++done, total);
+    return img;
+  };
+  /** Parte la lista en filas de n, completando la última con null */
+  const rowsOf = (images: (ReportImage | null)[], n: number) => {
+    const rows: (ReportImage | null)[][] = [];
+    for (let i = 0; i < Math.max(images.length, 1); i += n) {
+      const row = images.slice(i, i + n);
+      rows.push([...row, ...Array(n - row.length).fill(null)]);
+    }
+    return rows;
+  };
 
   const equipment = await Promise.all(
     b.equipment.map(async (e) => {
@@ -73,19 +94,7 @@ export async function buildReportModel(
       const photos = await Promise.all(
         STAGES.map(async (st) => {
           const list = b.photos.filter((x) => x.service_equipment_id === e.id && x.stage === st.id).sort((x, y) => x.position - y.position);
-          const images = await Promise.all(
-            list.map(async (p) => {
-              const img = await loadImage(p.storage_path, p.caption ?? '');
-              onProgress?.(++done, total);
-              return img;
-            }),
-          );
-          const rows: (ReportImage | null)[][] = [];
-          for (let i = 0; i < Math.max(images.length, 1); i += 3) {
-            const row = images.slice(i, i + 3);
-            rows.push([...row, ...Array(3 - row.length).fill(null)]);
-          }
-          return { stage: st.label.toUpperCase(), rows };
+          return { stage: st.label.toUpperCase(), rows: rowsOf(await Promise.all(list.map(image)), 3) };
         }),
       );
       return {
@@ -106,16 +115,32 @@ export async function buildReportModel(
     }),
   );
 
-  const conclusions = (s.conclusions || conclusionsFrom(b.findings, codeOf)).split('\n').filter(Boolean);
-  const recommendations = (s.recommendations || recommendationsFrom(b.findings, codeOf)).split('\n').filter(Boolean);
-  const sinHallazgo = b.equipment.filter((e) => !b.findings.some((f) => f.service_equipment_id === e.id)).map((e) => e.code);
-  if (sinHallazgo.length) conclusions.push(`${conclusions.length + 1}. Los equipos ${sinHallazgo.join(', ')} se encuentran conformes, sin observaciones.`);
+  const photoGroups = await Promise.all(
+    [...b.photoGroups].sort((x, y) => x.position - y.position).map(async (g) => {
+      const list = b.photos.filter((p) => p.group_id === g.id).sort((x, y) => x.position - y.position);
+      return { title: g.title.toUpperCase(), description: g.description ?? '', rows: list.length ? rowsOf(await Promise.all(list.map(image)), 2) : [] };
+    }),
+  );
+
+  // Con equipos los textos se generan desde los hallazgos (salvo que se hayan editado) y van numerados
+  const numbered = (xs: string[]) => xs.map((x, i) => `${i + 1}. ${x}`);
+  let conclusions = splitLines(s.conclusions);
+  let recommendations = splitLines(s.recommendations);
+  if (withEquipment) {
+    if (!s.conclusions) conclusions = splitLines(conclusionsFrom(b.findings, codeOf));
+    if (!s.recommendations) recommendations = splitLines(recommendationsFrom(b.findings, codeOf));
+    const sinHallazgo = b.equipment.filter((e) => !b.findings.some((f) => f.service_equipment_id === e.id)).map((e) => e.code);
+    if (sinHallazgo.length) conclusions.push(`Los equipos ${sinHallazgo.join(', ')} se encuentran conformes, sin observaciones.`);
+    conclusions = numbered(conclusions);
+    recommendations = numbered(recommendations);
+  }
 
   const site = names.site;
   const shortType = s.service_type.toUpperCase();
   const dateTag = fmtDate(s.execution_date).replaceAll('/', '-');
 
   return {
+    withEquipment,
     template: {
       code: tpl.code, name: tpl.name, version: String(tpl.version).padStart(2, '0'),
       issueDate: fmtDate(issueDate).replace(/\//g, '.').replace(/\.(\d{2})(\d{2})$/, '.$2'),
@@ -137,7 +162,10 @@ export async function buildReportModel(
       n: i + 1, code: codeOf(f.service_equipment_id), finding: f.finding, cause: f.probable_cause ?? '',
       action: f.action_taken ?? '', recommendation: f.recommendation ?? '', priority: f.priority,
     })),
+    workItems: s.work_items ?? [],
+    photoGroups,
     conclusions,
+    observations: splitLines(s.observations),
     recommendations,
     sections: tpl.sections,
     baseName: `INFORME ${shortType} - ${(site?.name ?? '').toUpperCase()} - ${dateTag}`.replace(/[\\/:*?"<>|]/g, ''),

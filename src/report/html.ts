@@ -25,6 +25,11 @@ const CSS = `
   .ph tr { page-break-inside: avoid; }
   .ph img { max-width: 100%; max-height: 46mm; display: block; margin: 0 auto 2px; }
   .ph .cap { font-size: 7.5pt; color: #444; }
+  .ph2 td { text-align: center; vertical-align: middle; width: 50%; height: 72mm; }
+  .ph2 tr { page-break-inside: avoid; }
+  .ph2 img { max-width: 100%; max-height: 66mm; display: block; margin: 0 auto 2px; }
+  .ph2 .cap { font-size: 7.5pt; color: #444; }
+  .desc { text-align: center; font-weight: bold; margin: 8px 0 14px; }
   .nc { color: #b00020; font-weight: bold; }
   p { margin: 6px 0; text-align: justify; line-height: 1.4; }
   ul { margin: 6px 0 6px 18px; padding: 0; }
@@ -45,35 +50,80 @@ function header(m: ReportModel) {
 
 const page = (m: ReportModel, body: string) => `<div class="page">${header(m)}${body}</div>`;
 
+const cover = (m: ReportModel) => page(m, `
+  <div class="cover">
+    <img src="${logo}" alt="Nórdico Ingenieros" style="width:110mm"/>
+    <h1>${esc(m.coverTitle).replace(' · ', '<br/>')}</h1>
+    <div class="meta">${esc(m.clientName)} · ${esc(m.site?.name ?? '')}<br/>${esc(m.executionDate)}</div>
+    <div class="meta"><b>NÓRDICO INGENIEROS</b><br/>INFORME TÉCNICO · ${esc(m.serviceCode)}</div>
+  </div>`);
+
+const memoria = (m: ReportModel, n: number) => `<h2>${n}. MEMORIA DESCRIPTIVA</h2>
+  <p>${esc(m.description)}</p>
+  <table class="kv">
+    <tr><td>Cliente</td><td>${esc(m.clientName)}</td></tr>
+    <tr><td>Tienda / Sede</td><td>${esc(m.site?.name ?? '')}</td></tr>
+    <tr><td>Dirección</td><td>${esc(m.site?.address ?? '—')}</td></tr>
+    <tr><td>Tipo de servicio</td><td>${esc(m.serviceType)}</td></tr>
+    <tr><td>Fecha de ejecución</td><td>${esc(m.executionDate)}</td></tr>
+    <tr><td>Orden de trabajo</td><td>${esc(m.workOrder)}</td></tr>
+    <tr><td>Técnico responsable</td><td>${esc(m.leadTech)}</td></tr>
+    <tr><td>Técnicos de apoyo</td><td>${esc(m.supportTechs)}</td></tr>
+  </table>`;
+
+const bullets = (xs: string[]) => `<ul>${xs.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>`;
+const doc = (m: ReportModel, pages: string[]) =>
+  `<!doctype html><html lang="es"><head><meta charset="utf-8"/><title>${esc(m.baseName)}</title><style>${CSS}</style></head><body>${pages.join('')}</body></html>`;
+
+/** Servicio sin equipos: secciones numeradas según lo que tenga (como los informes de pintura, SCI, etc.). */
+function renderServiceHtml(m: ReportModel) {
+  const has = (k: string) => m.sections.includes(k);
+  const pages: string[] = [];
+  let n = 0;
+  if (has('portada')) pages.push(cover(m));
+
+  let body = '';
+  if (has('memoria')) body += memoria(m, ++n);
+  if (has('detalles')) {
+    body += `<h2>${++n}. DETALLES PREVIOS</h2>${bullets(m.prevDetails)}`;
+    if (m.workItems.length) body += `<h2>${++n}. TRABAJOS REALIZADOS</h2>${bullets(m.workItems)}`;
+  }
+  if (body) pages.push(page(m, body));
+
+  const groups = m.photoGroups.filter((g) => g.rows.length);
+  if (has('fotos') && groups.length) {
+    const sec = ++n;
+    groups.forEach((g, i) => {
+      pages.push(page(m, `${i === 0 ? `<h2>${sec}. REGISTRO FOTOGRÁFICO</h2>` : ''}
+        <h3>${sec}.${i + 1}. ${esc(g.title)}</h3>
+        <table class="ph2">
+          ${g.rows.map((row) => `<tr>${row.map((img) => img
+            ? `<td><img src="${img.dataUrl}"/><div class="cap">${esc(img.caption)}</div></td>`
+            : '<td class="cap"></td>').join('')}</tr>`).join('')}
+        </table>
+        ${g.description ? `<p class="desc">${esc(g.description)}</p>` : ''}`));
+    });
+  }
+
+  let tail = '';
+  if (has('conclusiones')) {
+    tail += `<h2>${++n}. CONCLUSIONES</h2>${m.conclusions.length ? bullets(m.conclusions) : '<p>—</p>'}`;
+    if (m.observations.length) tail += `<h2>${++n}. OBSERVACIONES</h2>${bullets(m.observations)}`;
+    tail += `<h2>${++n}. RECOMENDACIONES</h2>${m.recommendations.length ? bullets(m.recommendations) : '<p>—</p>'}`;
+  }
+  if (tail) pages.push(page(m, tail));
+  return doc(m, pages);
+}
+
 export function renderReportHtml(m: ReportModel) {
+  if (!m.withEquipment) return renderServiceHtml(m);
   const has = (k: string) => m.sections.includes(k);
   const pages: string[] = [];
 
-  if (has('portada')) {
-    pages.push(page(m, `
-      <div class="cover">
-        <img src="${logo}" alt="Nórdico Ingenieros" style="width:110mm"/>
-        <h1>${esc(m.coverTitle).replace(' · ', '<br/>')}</h1>
-        <div class="meta">${esc(m.clientName)} · ${esc(m.site?.name ?? '')}<br/>${esc(m.executionDate)}</div>
-        <div class="meta"><b>NÓRDICO INGENIEROS</b><br/>INFORME TÉCNICO · ${esc(m.serviceCode)}</div>
-      </div>`));
-  }
+  if (has('portada')) pages.push(cover(m));
 
   let body = '';
-  if (has('memoria')) {
-    body += `<h2>1. MEMORIA DESCRIPTIVA</h2>
-      <p>${esc(m.description)}</p>
-      <table class="kv">
-        <tr><td>Cliente</td><td>${esc(m.clientName)}</td></tr>
-        <tr><td>Tienda / Sede</td><td>${esc(m.site?.name ?? '')}</td></tr>
-        <tr><td>Dirección</td><td>${esc(m.site?.address ?? '—')}</td></tr>
-        <tr><td>Tipo de servicio</td><td>${esc(m.serviceType)}</td></tr>
-        <tr><td>Fecha de ejecución</td><td>${esc(m.executionDate)}</td></tr>
-        <tr><td>Orden de trabajo</td><td>${esc(m.workOrder)}</td></tr>
-        <tr><td>Técnico responsable</td><td>${esc(m.leadTech)}</td></tr>
-        <tr><td>Técnicos de apoyo</td><td>${esc(m.supportTechs)}</td></tr>
-      </table>`;
-  }
+  if (has('memoria')) body += memoria(m, 1);
   if (has('detalles')) {
     body += `<h2>2. DETALLES PREVIOS</h2>
       <ul>${m.prevDetails.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>
@@ -125,7 +175,7 @@ export function renderReportHtml(m: ReportModel) {
   }
   if (tail) pages.push(page(m, tail));
 
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"/><title>${esc(m.baseName)}</title><style>${CSS}</style></head><body>${pages.join('')}</body></html>`;
+  return doc(m, pages);
 }
 
 export function pageCount(m: ReportModel) {

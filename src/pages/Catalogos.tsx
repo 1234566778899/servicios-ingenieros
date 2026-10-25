@@ -19,7 +19,8 @@ import { useAsync } from '../lib/useAsync';
 import { fmtDateTime } from '../lib/format';
 import { useMediaQuery } from '../lib/media';
 import { useNotify } from '../lib/toast';
-import type { CatalogFinding, CatalogOption, ChecklistTemplate, Priority, Site, TemplateItem } from '../lib/types';
+import { invalidateConcepts } from '../components/Concepts';
+import type { CatalogFinding, CatalogOption, ChecklistTemplate, Concept, ConceptKind, Priority, Site, TemplateItem } from '../lib/types';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
@@ -37,6 +38,7 @@ const useStyles = makeStyles({
 const TABS = [
   ['checklist', 'Checklist por tipo de equipo'],
   ['hallazgos', 'Catálogo de hallazgos'],
+  ['conceptos', 'Conceptos'],
   ['clientes', 'Clientes y sedes'],
   ['opciones', 'Tipos de servicio y especialidades'],
 ] as const;
@@ -67,11 +69,12 @@ export function Catalogos() {
       )}
       {tab === 'checklist' && <ChecklistTemplates admin={admin} />}
       {tab === 'hallazgos' && <FindingsCatalog admin={admin} />}
+      {tab === 'conceptos' && <ConceptsCatalog admin={admin} />}
       {tab === 'clientes' && <ClientsSites admin={admin} />}
       {tab === 'opciones' && (
         <div className={s.pair}>
           <OptionsCatalog admin={admin} table="service_types" column="service_type" title="Tipos de servicio" singular="tipo de servicio" female={false} placeholder="Ej.: Mantenimiento predictivo" />
-          <OptionsCatalog admin={admin} table="specialties" column="specialty" title="Especialidades" singular="especialidad" female placeholder="Ej.: Agua helada" />
+          <OptionsCatalog admin={admin} table="specialties" column="specialty" title="Especialidades" singular="especialidad" female placeholder="Ej.: Agua helada" equipmentToggle />
         </div>
       )}
     </>
@@ -545,9 +548,11 @@ function ClientsSites({ admin }: { admin: boolean }) {
 
 /* ───────────────────────── Tipos de servicio y especialidades ───────────────────────── */
 
-function OptionsCatalog({ admin, table, column, title, singular, female, placeholder }: {
+function OptionsCatalog({ admin, table, column, title, singular, female, placeholder, equipmentToggle }: {
   admin: boolean; table: 'service_types' | 'specialties'; column: 'service_type' | 'specialty';
   title: string; singular: string; female: boolean; placeholder: string;
+  /** Especialidades: columna "Con equipos" (lista de equipos, checklist y hallazgos en el servicio) */
+  equipmentToggle?: boolean;
 }) {
   const g = (fem: string, masc: string) => (female ? fem : masc);
   const s = useStyles();
@@ -609,6 +614,7 @@ function OptionsCatalog({ admin, table, column, title, singular, female, placeho
             {admin && <TableHeaderCell className={s.wideOnly} style={{ width: 70 }}>Orden</TableHeaderCell>}
             <TableHeaderCell>Nombre</TableHeaderCell>
             <TableHeaderCell className={s.wideOnly} style={{ width: 80 }}>Servicios</TableHeaderCell>
+            {equipmentToggle && <TableHeaderCell style={{ width: 96 }}>Con equipos</TableHeaderCell>}
             <TableHeaderCell style={{ width: 64 }}>{g('Activa', 'Activo')}</TableHeaderCell>
             {admin && <TableHeaderCell style={{ width: 44 }} />}
           </TableRow>
@@ -631,6 +637,12 @@ function OptionsCatalog({ admin, table, column, title, singular, female, placeho
                   </Caption1>
                 </TableCell>
                 <TableCell className={s.wideOnly}>{uses ? uses.get(o.name) ?? 0 : '…'}</TableCell>
+                {equipmentToggle && (
+                  <TableCell>
+                    <Switch checked={!!o.has_equipment} disabled={!admin || busy} aria-label={`Con equipos: ${o.name}`}
+                      onChange={(_, d) => run(async () => supabase.from(table).update({ has_equipment: d.checked }).eq('id', o.id), 'No se pudo actualizar')} />
+                  </TableCell>
+                )}
                 <TableCell>
                   <Switch checked={o.active} disabled={!admin || busy} aria-label={`${g('Activa', 'Activo')}: ${o.name}`}
                     onChange={(_, d) => run(async () => supabase.from(table).update({ active: d.checked }).eq('id', o.id), 'No se pudo actualizar')} />
@@ -662,6 +674,7 @@ function OptionsCatalog({ admin, table, column, title, singular, female, placeho
         Solo {g('las activas aparecen', 'los activos aparecen')} al registrar un servicio. Renombrar o desactivar no cambia los servicios ya registrados;
         {g(' las que ya se usaron', ' los que ya se usaron')} no se pueden quitar, solo desactivar.
         {table === 'service_types' && ' Al renombrar un tipo de servicio, sus plantillas de informe se actualizan.'}
+        {equipmentToggle && ' “Con equipos”: el servicio lleva lista de equipos de la sede, checklist y hallazgos; sin equipos se registran trabajos realizados, fotos por sección y conclusiones.'}
       </Caption1>
 
       <Dialog open={!!draft} onOpenChange={(_, d) => !d.open && setDraft(null)}>
@@ -686,6 +699,143 @@ function OptionsCatalog({ admin, table, column, title, singular, female, placeho
         onConfirm={async () => {
           await run(async () => supabase.from(table).delete().eq('id', toDelete!.id), 'No se pudo quitar');
           setToDelete(null);
+        }} />
+    </Section>
+  );
+}
+
+/* ───────────────────────── Conceptos reutilizables ───────────────────────── */
+
+const KINDS: [ConceptKind, string][] = [
+  ['trabajo', 'Trabajos realizados'], ['conclusion', 'Conclusiones'], ['recomendacion', 'Recomendaciones'],
+  ['observacion', 'Observaciones'], ['foto', 'Descripciones de fotos'], ['detalle', 'Detalles previos'],
+];
+
+function ConceptsCatalog({ admin }: { admin: boolean }) {
+  const s = useStyles();
+  const cat = useCatalogs();
+  const { profile } = useAuth();
+  const notify = useNotify();
+  const [kind, setKind] = useState<ConceptKind>('trabajo');
+  const [specialty, setSpecialty] = useState<string | null>(null);
+  const [q, setQ] = useState('');
+  const [draft, setDraft] = useState<Partial<Concept> | null>(null);
+  const [toDelete, setToDelete] = useState<Concept | null>(null);
+
+  const { data, error, loading, reload } = useAsync(async () =>
+    must(await supabase.from('concepts').select('*').order('uses', { ascending: false }).order('text')) as Concept[], []);
+
+  const rows = useMemo(() => (data ?? []).filter((c) =>
+    c.kind === kind && (specialty === null || c.specialty === specialty) &&
+    (!q || c.text.toLowerCase().includes(q.toLowerCase()))), [data, kind, specialty, q]);
+  const count = (k: ConceptKind) => (data ?? []).filter((c) => c.kind === k).length;
+  const mine = (c: Concept) => admin || c.created_by === profile?.id;
+
+  const save = async () => {
+    const text = draft?.text?.trim();
+    if (!text) return;
+    const row = { kind: draft!.kind ?? kind, specialty: draft!.specialty ?? '', text };
+    const res = draft!.id
+      ? await supabase.from('concepts').update(row).eq('id', draft!.id)
+      : await supabase.from('concepts').insert(row);
+    if (res.error) return notify('No se pudo guardar', 'error', res.error.message.includes('duplicate') ? 'Ese concepto ya existe.' : res.error.message);
+    invalidateConcepts(row.kind);
+    notify('Concepto guardado');
+    setDraft(null);
+    reload();
+  };
+
+  return (
+    <Section title="Conceptos reutilizables"
+      subtitle={`${data?.length ?? 0} guardados`}
+      actions={<Button appearance="primary" icon={<Add20Regular />} onClick={() => setDraft({ kind, specialty: specialty ?? '' })}>Nuevo concepto</Button>}>
+      <ErrorBar error={error} />
+      <Caption1 block style={{ marginBottom: 12, color: tokens.colorNeutralForeground3 }}>
+        Textos que se repiten entre informes. Se sugieren al escribir en el servicio y se guardan solos cuando se usa un texto nuevo;
+        aquí puedes corregirlos, agregar otros o quitar los que no sirvan. Los de “General” se sugieren en todas las especialidades.
+      </Caption1>
+      <div className={s.filters}>
+        <Field label="Tipo de texto">
+          <Dropdown value={KINDS.find(([k]) => k === kind)![1]} selectedOptions={[kind]} onOptionSelect={(_, d) => setKind(d.optionValue as ConceptKind)} style={{ minWidth: 200 }}>
+            {KINDS.map(([k, label]) => <Option key={k} value={k} text={label}>{label} ({count(k)})</Option>)}
+          </Dropdown>
+        </Field>
+        <Field label="Especialidad">
+          <Dropdown value={specialty === null ? 'Todas' : specialty || 'General'} selectedOptions={[specialty ?? '*']}
+            onOptionSelect={(_, d) => setSpecialty(d.optionValue === '*' ? null : d.optionValue ?? '')} style={{ minWidth: 190 }}>
+            <Option value="*">Todas</Option>
+            <Option value="">General</Option>
+            {cat.specialties.map((o) => <Option key={o.id} value={o.name}>{o.name}</Option>)}
+          </Dropdown>
+        </Field>
+        <Field label="Buscar"><Input contentBefore={<Search20Regular />} value={q} onChange={(_, d) => setQ(d.value)} style={{ width: 240 }} /></Field>
+      </div>
+      <Table size="small">
+        <TableHeader>
+          <TableRow>
+            <TableHeaderCell>Texto</TableHeaderCell>
+            <TableHeaderCell className={s.wideOnly} style={{ width: 170 }}>Especialidad</TableHeaderCell>
+            <TableHeaderCell className={s.wideOnly} style={{ width: 70 }}>Usos</TableHeaderCell>
+            <TableHeaderCell style={{ width: 110 }} />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((c) => (
+            <TableRow key={c.id}>
+              <TableCell>{c.text}</TableCell>
+              <TableCell className={s.wideOnly}>{c.specialty || 'General'}</TableCell>
+              <TableCell className={s.wideOnly}>{c.uses}</TableCell>
+              <TableCell>
+                {mine(c) && <><Link onClick={() => setDraft(c)}>Editar</Link> · <Link onClick={() => setToDelete(c)}>Quitar</Link></>}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {loading && !data && <Spinner style={{ padding: 24 }} />}
+      {data && !rows.length && <Caption1 block style={{ padding: 12 }}>No hay conceptos con esos filtros.</Caption1>}
+
+      <Dialog open={!!draft} onOpenChange={(_, d) => !d.open && setDraft(null)}>
+        <DialogSurface style={{ maxWidth: 640 }}>
+          <DialogBody>
+            <DialogTitle>{draft?.id ? 'Editar concepto' : 'Nuevo concepto'}</DialogTitle>
+            {draft && (
+              <DialogContent>
+                <div className={s.form}>
+                  <Field label="Tipo de texto">
+                    <Dropdown value={KINDS.find(([k]) => k === (draft.kind ?? kind))![1]} selectedOptions={[draft.kind ?? kind]}
+                      onOptionSelect={(_, d) => setDraft({ ...draft, kind: d.optionValue as ConceptKind })}>
+                      {KINDS.map(([k, label]) => <Option key={k} value={k}>{label}</Option>)}
+                    </Dropdown>
+                  </Field>
+                  <Field label="Especialidad">
+                    <Dropdown value={draft.specialty || 'General'} selectedOptions={[draft.specialty ?? '']}
+                      onOptionSelect={(_, d) => setDraft({ ...draft, specialty: d.optionValue ?? '' })}>
+                      <Option value="">General</Option>
+                      {cat.specialties.map((o) => <Option key={o.id} value={o.name}>{o.name}</Option>)}
+                    </Dropdown>
+                  </Field>
+                  <Field label="Texto" required className={s.span2}>
+                    <Textarea rows={4} value={draft.text ?? ''} onChange={(_, d) => setDraft({ ...draft, text: d.value })} />
+                  </Field>
+                </div>
+              </DialogContent>
+            )}
+            <DialogActions>
+              <Button onClick={() => setDraft(null)}>Cancelar</Button>
+              <Button appearance="primary" disabled={!draft?.text?.trim()} onClick={save}>Guardar</Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+      <ConfirmDialog open={!!toDelete} title="¿Quitar concepto?" body={`Ya no se sugerirá “${toDelete?.text}”. Los informes donde se usó no cambian.`} danger confirmLabel="Quitar"
+        onCancel={() => setToDelete(null)}
+        onConfirm={async () => {
+          const { error: err } = await supabase.from('concepts').delete().eq('id', toDelete!.id);
+          if (err) notify('No se pudo quitar', 'error', err.message);
+          invalidateConcepts(toDelete!.kind);
+          setToDelete(null);
+          reload();
         }} />
     </Section>
   );

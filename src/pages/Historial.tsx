@@ -223,7 +223,7 @@ export function Historial() {
             <div style={{ display: 'flex', gap: 8, marginTop: 24 }}>
               <Button onClick={() => navigate(`/servicios/${open.service_id}`)}>Ver servicio</Button>
               {(can('informes.word') || can('informes.pdf')) && (
-                <Button appearance="primary" onClick={() => navigate(`/servicios/${open.service_id}/editar?paso=6`)}>Regenerar informe</Button>
+                <Button appearance="primary" onClick={() => navigate(`/servicios/${open.service_id}/editar?paso=informe`)}>Regenerar informe</Button>
               )}
             </div>
           </DrawerBody>

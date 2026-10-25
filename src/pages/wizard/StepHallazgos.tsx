@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   Button, Caption1, Field, MessageBar, MessageBarBody, Table, TableBody, TableCell, TableHeader, TableHeaderCell,
-  TableRow, Text, Textarea, makeStyles, tokens,
+  TableRow, Text, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Add20Regular, ArrowClockwise20Regular, ArrowLeft20Regular, ArrowRight20Regular, Delete20Regular, Edit20Regular } from '@fluentui/react-icons';
 import { AsyncButton, Section, StatusBadge } from '../../components/common';
+import { ConceptList, invalidateConcepts } from '../../components/Concepts';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { FindingDialog } from '../../components/FindingDialog';
 import { supabase, must } from '../../lib/supabase';
-import { logActivity } from '../../lib/services';
+import { logActivity, rememberConcepts, splitLines } from '../../lib/services';
 import { conclusionsFrom, recommendationsFrom } from '../../lib/texts';
 import { useNotify } from '../../lib/toast';
 import type { Finding } from '../../lib/types';
@@ -31,26 +32,36 @@ export function StepHallazgos({ bundle, reload, readOnly, goTo, registerSave }: 
   const [dialog, setDialog] = useState<Partial<Finding> | null>(null);
   const [toDelete, setToDelete] = useState<Finding | null>(null);
   const [manual, setManual] = useState(!!svc.conclusions);
-  const [conclusions, setConclusions] = useState(svc.conclusions ?? '');
-  const [recommendations, setRecommendations] = useState(svc.recommendations ?? '');
+  // Editadas a mano: un elemento por conclusión / recomendación (el informe las numera)
+  const [conclusions, setConclusions] = useState(splitLines(svc.conclusions));
+  const [recommendations, setRecommendations] = useState(splitLines(svc.recommendations));
 
   const genC = conclusionsFrom(bundle.findings, codeOf);
   const genR = recommendationsFrom(bundle.findings, codeOf);
-  const shownC = manual ? conclusions : genC;
-  const shownR = manual ? recommendations : genR;
+  const shownC = manual ? conclusions.join('\n') : genC;
+  const shownR = manual ? recommendations.join('\n') : genR;
 
-  const latest = useRef({ shownC, shownR });
-  latest.current = { shownC, shownR };
+  const latest = useRef({ shownC, shownR, manual });
+  latest.current = { shownC, shownR, manual };
+  const saved = useRef({ c: svc.conclusions ?? '', r: svc.recommendations ?? '' });
 
   const save = async () => {
     if (readOnly) return true;
-    const { shownC: c, shownR: r } = latest.current;
-    if ((svc.conclusions ?? '') === c && (svc.recommendations ?? '') === r) return true;
+    const { shownC: c, shownR: r, manual: m } = latest.current;
+    if (saved.current.c === c && saved.current.r === r) return true;
     const { error } = await supabase.from('services').update({ conclusions: c || null, recommendations: r || null }).eq('id', svc.id);
     if (error) {
       notify('No se pudo guardar', 'error', error.message);
       return false;
     }
+    if (m) {
+      const fresh = (now: string, before: string) => splitLines(now).filter((x) => !splitLines(before).includes(x));
+      await rememberConcepts('conclusion', svc.specialty, fresh(c, saved.current.c));
+      await rememberConcepts('recomendacion', svc.specialty, fresh(r, saved.current.r));
+      invalidateConcepts('conclusion');
+      invalidateConcepts('recomendacion');
+    }
+    saved.current = { c, r };
     notify('Conclusiones guardadas');
     return true;
   };
@@ -138,17 +149,21 @@ export function StepHallazgos({ bundle, reload, readOnly, goTo, registerSave }: 
           manual ? (
             <Button icon={<ArrowClockwise20Regular />} onClick={() => setManual(false)}>Regenerar texto</Button>
           ) : (
-            <Button icon={<Edit20Regular />} onClick={() => { setConclusions(genC); setRecommendations(genR); setManual(true); }}>Editar manualmente</Button>
+            <Button icon={<Edit20Regular />} onClick={() => { setConclusions(splitLines(genC)); setRecommendations(splitLines(genR)); setManual(true); }}>Editar manualmente</Button>
           )
         )}
       >
         <div style={{ height: 8 }} />
         <div className={s.texts}>
           <Field label="Conclusiones">
-            {manual ? <Textarea rows={6} value={conclusions} onChange={(_, d) => setConclusions(d.value)} disabled={readOnly} /> : <Text className={s.pre}>{genC || '—'}</Text>}
+            {manual
+              ? <ConceptList kind="conclusion" specialty={svc.specialty} items={conclusions} onChange={setConclusions} readOnly={readOnly} numbered />
+              : <Text className={s.pre}>{genC || '—'}</Text>}
           </Field>
           <Field label="Recomendaciones">
-            {manual ? <Textarea rows={6} value={recommendations} onChange={(_, d) => setRecommendations(d.value)} disabled={readOnly} /> : <Text className={s.pre}>{genR || '—'}</Text>}
+            {manual
+              ? <ConceptList kind="recomendacion" specialty={svc.specialty} items={recommendations} onChange={setRecommendations} readOnly={readOnly} numbered />
+              : <Text className={s.pre}>{genR || '—'}</Text>}
           </Field>
         </div>
         <Caption1 block style={{ marginTop: 8, color: tokens.colorNeutralForeground3 }}>
@@ -158,8 +173,8 @@ export function StepHallazgos({ bundle, reload, readOnly, goTo, registerSave }: 
       </Section>
 
       <div className={s.footer}>
-        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(4)}>Anterior: Fotografías</AsyncButton>
-        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo(6)}>Siguiente: Generar informe</AsyncButton>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo('fotos')}>Anterior: Fotografías</AsyncButton>
+        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo('informe')}>Siguiente: Generar informe</AsyncButton>
       </div>
 
       <FindingDialog open={!!dialog} bundle={bundle} initial={dialog ?? undefined} onClose={() => setDialog(null)}

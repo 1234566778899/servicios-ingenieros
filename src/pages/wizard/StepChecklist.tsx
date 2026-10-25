@@ -224,10 +224,10 @@ export function StepChecklist({ bundle, reload, readOnly, goTo }: StepProps) {
         )}
       </div>
       <div className={s.footer}>
-        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(2, saveObservation)}>Anterior: Equipos</AsyncButton>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo('equipos', saveObservation)}>Anterior: Equipos</AsyncButton>
         <div style={{ display: 'flex', gap: 8 }}>
           {nextEq && <Button onClick={() => { saveObservation(); setSelId(nextEq.id); }}>Siguiente equipo: {nextEq.code}</Button>}
-          <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo(4, saveObservation)}>
+          <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo('fotos', saveObservation)}>
             Siguiente: Fotografías
           </AsyncButton>
         </div>

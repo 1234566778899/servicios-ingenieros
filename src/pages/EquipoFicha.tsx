@@ -13,7 +13,7 @@ import { useAsync } from '../lib/useAsync';
 import { equipmentLabel } from '../lib/services';
 import { fmtDate, shortType } from '../lib/format';
 import { useNotify } from '../lib/toast';
-import type { ChecklistResult, ServiceEquipment, TemplateItem } from '../lib/types';
+import type { ChecklistResult, ServiceEquipment, SiteEquipment, TemplateItem } from '../lib/types';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
@@ -35,12 +35,15 @@ export function EquipoFicha({ code }: { code: string }) {
   const [editing, setEditing] = useState(false);
 
   const { data, error, loading, reload } = useAsync(async () => {
-    const rows = must(
-      await supabase
-        .from('service_equipment')
-        .select('*, services!inner(id, code, client_id, site_id, execution_date, service_type, lead_tech_id), findings(priority)')
-        .eq('code', code),
-    ) as Row[];
+    // Ficha del inventario de la sede (si existe) e historial por vínculo o por código
+    const inv = must(await supabase.from('site_equipment').select('*').eq('code', code).limit(1)) as SiteEquipment[];
+    const master = inv[0];
+    const select = '*, services!inner(id, code, client_id, site_id, execution_date, service_type, lead_tech_id), findings(priority)';
+    const [byCode, byLink] = await Promise.all([
+      supabase.from('service_equipment').select(select).eq('code', code),
+      master ? supabase.from('service_equipment').select(select).eq('site_equipment_id', master.id) : { data: [], error: null },
+    ]);
+    const rows = [...new Map([...(must(byCode) as Row[]), ...(must(byLink) as Row[])].map((r) => [r.id, r])).values()];
     rows.sort((a, b) => b.services.execution_date.localeCompare(a.services.execution_date));
     const latest = rows[0];
     const sids = rows.map((r) => r.services.id);
@@ -50,6 +53,7 @@ export function EquipoFicha({ code }: { code: string }) {
       latest ? supabase.from('checklist_results').select('*').eq('service_equipment_id', latest.id) : { data: [] },
     ]);
     return {
+      master,
       rows,
       latest,
       reportOf: (sid: string) => (reports.data ?? []).find((r: any) => r.service_id === sid)?.number as string | undefined,
@@ -59,20 +63,24 @@ export function EquipoFicha({ code }: { code: string }) {
   }, [code]);
 
   if (loading && !data) return <Loading />;
-  const e = data?.latest;
-  if (!e) return <ErrorBar error={error ?? `No se encontró el equipo ${code}.`} />;
+  const m = data?.master;
+  const last = data?.latest;
+  if (!m && !last) return <ErrorBar error={error ?? `No se encontró el equipo ${code}.`} />;
+  // Datos maestros: los del inventario; si el equipo no está en el inventario, los del último servicio
+  const e = (m ?? last)!;
+  const siteId = m?.site_id ?? last!.services.site_id;
 
   const RES: Record<string, string> = { C: 'Conforme', NC: 'No conforme', NA: 'N.A.' };
   const counts = { C: 0, NC: 0 };
   for (const r of data.results) if (r.result === 'C' || r.result === 'NC') counts[r.result]++;
-  const site = cat.sites.find((x) => x.id === e.services.site_id);
+  const site = cat.sites.find((x) => x.id === siteId);
 
   return (
     <>
       <PageHeader
         crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Equipos', to: '/equipos' }, { label: code }]}
         title={`${code} · ${cat.typeName(e.equipment_type_id)} ${equipmentLabel(e)}`}
-        actions={can('servicios.editar_otros') && <Button icon={<Edit20Regular />} onClick={() => setEditing(true)}>Editar equipo</Button>}
+        actions={(m ? can('equipos.gestionar') : can('servicios.editar_otros')) && <Button icon={<Edit20Regular />} onClick={() => setEditing(true)}>Editar equipo</Button>}
       />
       <div className={s.grid}>
         <Section title="Datos del equipo">
@@ -80,16 +88,17 @@ export function EquipoFicha({ code }: { code: string }) {
             {[
               ['Código', e.code], ['Tipo de equipo', cat.typeName(e.equipment_type_id)], ['Capacidad', equipmentLabel(e)],
               ['Marca / Modelo', [e.brand, e.model].filter(Boolean).join(' / ')], ['N.º de serie', e.serial || '— (sin serie visible)'],
-              ['Cliente', cat.clientName(e.services.client_id)], ['Tienda / Sede', site?.name], ['Observación', e.observation],
-              ['Plantilla de checklist', e.checklist_template_id ? cat.typeName(e.equipment_type_id) : '—'],
+              ['Cliente', cat.clientName(site?.client_id)], ['Tienda / Sede', site?.name],
+              m ? ['Ubicación / notas', m.location] : ['Observación', last!.observation],
+              ['Inventario de la sede', m ? (m.active ? 'Activo' : 'Dado de baja') : 'No registrado (solo en servicios)'],
             ].map(([k, v]) => (
               <span key={k as string} style={{ display: 'contents' }}>
                 <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>{k}</Caption1>
                 <Text size={300}>{v || '—'}</Text>
               </span>
             ))}
-            <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>Estado</Caption1>
-            <span><StatusBadge status={e.final_status} /></span>
+            <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>Estado último servicio</Caption1>
+            <span>{last ? <StatusBadge status={last.final_status} /> : '—'}</span>
           </div>
         </Section>
         <div className={s.col}>
@@ -124,7 +133,7 @@ export function EquipoFicha({ code }: { code: string }) {
               </TableBody>
             </Table>
           </Section>
-          <Section title={`Último checklist · ${fmtDate(e.services.execution_date)}`} subtitle={`${counts.C} Conforme · ${counts.NC} No conforme`}>
+          {last && <Section title={`Último checklist · ${fmtDate(last.services.execution_date)}`} subtitle={`${counts.C} Conforme · ${counts.NC} No conforme`}>
             <Table size="small">
               <TableHeader>
                 <TableRow>
@@ -148,19 +157,26 @@ export function EquipoFicha({ code }: { code: string }) {
                 })}
               </TableBody>
             </Table>
-            <Link style={{ marginTop: 8, display: 'inline-block' }} onClick={() => navigate(`/servicios/${e.services.id}/editar?paso=3`)}>Ver checklist completo →</Link>
-          </Section>
+            <Link style={{ marginTop: 8, display: 'inline-block' }} onClick={() => navigate(`/servicios/${last.services.id}/editar?paso=checklist`)}>Ver checklist completo →</Link>
+          </Section>}
         </div>
       </div>
       <EquipmentDialog
         open={editing}
         title={`Editar ${code}`}
-        initial={e}
+        initial={m ? { ...m, observation: m.location } : last}
+        siteId={siteId}
+        observationLabel={m ? 'Ubicación / notas' : undefined}
         onClose={() => setEditing(false)}
         onSave={async (f) => {
-          // Corrige los datos maestros en todos los servicios donde aparece el equipo
-          const { observation: _o, ...master } = f;
-          must(await supabase.from('service_equipment').update(master).eq('code', code));
+          const { observation, ...fields } = f;
+          if (m) {
+            // Inventario: lo usan los próximos servicios; los informes ya emitidos no cambian
+            must(await supabase.from('site_equipment').update({ ...fields, location: observation }).eq('id', m.id));
+          } else {
+            // Sin inventario: corrige los datos maestros en todos los servicios donde aparece el equipo
+            must(await supabase.from('service_equipment').update(fields).eq('code', code));
+          }
           notify('Equipo actualizado');
           if (f.code !== code) navigate(`/equipos/${encodeURIComponent(f.code!)}`);
           else reload();

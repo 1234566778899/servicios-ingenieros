@@ -12,7 +12,7 @@ import { useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
 import { supabase } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
-import { equipmentLabel, loadServiceBundle } from '../lib/services';
+import { equipmentLabel, loadServiceBundle, usesEquipment } from '../lib/services';
 import { useServicePresence } from '../lib/presence';
 import { fmtDate, fmtDateTime, fmtSize } from '../lib/format';
 import { useNotify } from '../lib/toast';
@@ -59,6 +59,9 @@ export function ServicioDetalle({ id }: { id: string }) {
 
   const svc = data.service;
   const site = cat.sites.find((x) => x.id === svc.site_id);
+  const withEquipment = usesEquipment(data, cat.hasEquipment);
+  const groups = [...data.photoGroups].sort((a, b) => a.position - b.position);
+  const groupPhotos = (id: string) => data.photos.filter((p) => p.group_id === id).sort((a, b) => a.position - b.position);
   const member = [svc.created_by, svc.lead_tech_id, ...svc.support_tech_ids].includes(profile!.id);
   const canEdit = can('servicios.editar_otros') || (can('servicios.editar_propios') && member);
   const canReport = canEdit && (can('informes.word') || can('informes.pdf'));
@@ -117,7 +120,7 @@ export function ServicioDetalle({ id }: { id: string }) {
           <>
             <Button icon={<Edit20Regular />} onClick={guard(canEdit, 'Editar servicio', () => navigate(`/servicios/${id}/editar`))}>Editar servicio</Button>
             <Button appearance="primary" icon={<DocumentArrowRight20Regular />}
-              onClick={guard(canReport, 'Generar informe', () => navigate(`/servicios/${id}/editar?paso=6`))}>
+              onClick={guard(canReport, 'Generar informe', () => navigate(`/servicios/${id}/editar?paso=informe`))}>
               Generar informe
             </Button>
           </>
@@ -137,7 +140,7 @@ export function ServicioDetalle({ id }: { id: string }) {
       ))}
       <TabList className={s.tabs} selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as string)}>
         <Tab value="resumen">Resumen</Tab>
-        <Tab value="equipos">Equipos ({data.equipment.length})</Tab>
+        {withEquipment && <Tab value="equipos">Equipos ({data.equipment.length})</Tab>}
         <Tab value="fotos">Fotografías ({data.photos.length})</Tab>
         <Tab value="informes">Informes ({data.reports.length})</Tab>
         <Tab value="historial">Historial de cambios</Tab>
@@ -160,12 +163,20 @@ export function ServicioDetalle({ id }: { id: string }) {
               </div>
               <div style={{ marginTop: 12 }}><KV label="Descripción del trabajo" value={svc.description} /></div>
             </Section>
-            <Section title="Equipos" subtitle={`${data.equipment.length} · ${nc} No conforme`}>{equipmentTable}</Section>
+            {withEquipment ? (
+              <Section title="Equipos" subtitle={`${data.equipment.length} · ${nc} No conforme`}>{equipmentTable}</Section>
+            ) : (
+              <Section title="Trabajos realizados" subtitle={String(svc.work_items.length)}>
+                {svc.work_items.length
+                  ? <ul style={{ margin: 0, paddingLeft: 18 }}>{svc.work_items.map((t, i) => <li key={i}><Text size={300}>{t}</Text></li>)}</ul>
+                  : <Caption1>Sin trabajos registrados.</Caption1>}
+              </Section>
+            )}
           </div>
           <div className={s.col}>
-            <Section title="Fotografías" actions={canEdit && <Button size="small" icon={<Image20Regular />} onClick={() => navigate(`/servicios/${id}/editar?paso=4`)}>Gestionar fotografías</Button>}>
+            <Section title="Fotografías" actions={canEdit && <Button size="small" icon={<Image20Regular />} onClick={() => navigate(`/servicios/${id}/editar?paso=fotos`)}>Gestionar fotografías</Button>}>
               <div className={s.photos}>
-                {STAGES.map((st) => {
+                {withEquipment ? STAGES.map((st) => {
                   const list = data.photos.filter((p) => p.stage === st.id);
                   return (
                     <div key={st.id}>
@@ -174,8 +185,18 @@ export function ServicioDetalle({ id }: { id: string }) {
                       <Caption1>{list.length} fotos · {new Set(list.map((p) => p.service_equipment_id)).size} equipos</Caption1>
                     </div>
                   );
+                }) : groups.map((g) => {
+                  const list = groupPhotos(g.id);
+                  return (
+                    <div key={g.id}>
+                      {list[0] ? <PhotoThumb path={list[0].storage_path} alt={g.title} height={80} /> : <div style={{ height: 80, background: tokens.colorNeutralBackground3, borderRadius: 4 }} />}
+                      <Text block weight="semibold" size={200} truncate wrap={false} title={g.title}>{g.title}</Text>
+                      <Caption1>{list.length} fotos</Caption1>
+                    </div>
+                  );
                 })}
               </div>
+              {!withEquipment && !groups.length && <Caption1>Sin fotografías.</Caption1>}
             </Section>
             <Section title="Actividad reciente">
               {data.log.slice(0, 5).map((a: any) => (
@@ -195,7 +216,25 @@ export function ServicioDetalle({ id }: { id: string }) {
 
       {tab === 'equipos' && <Section>{equipmentTable}</Section>}
 
-      {tab === 'fotos' && (
+      {tab === 'fotos' && !withEquipment && (
+        <div className={s.col}>
+          {groups.map((g) => (
+            <Section key={g.id} title={g.title} subtitle={`${groupPhotos(g.id).length} fotos${g.description ? ` · ${g.description}` : ''}`}>
+              <div className={s.gallery}>
+                {groupPhotos(g.id).map((p) => (
+                  <div key={p.id}>
+                    <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} />
+                    <Caption1 block>{p.caption}</Caption1>
+                  </div>
+                ))}
+              </div>
+            </Section>
+          ))}
+          {!groups.length && <Section><Caption1>Sin fotografías.</Caption1></Section>}
+        </div>
+      )}
+
+      {tab === 'fotos' && withEquipment && (
         <div className={s.col}>
           {data.equipment.map((e) => (
             <Section key={e.id} title={`${e.code} · ${cat.typeName(e.equipment_type_id)}`} subtitle={`${data.photos.filter((p) => p.service_equipment_id === e.id).length} fotos`}>

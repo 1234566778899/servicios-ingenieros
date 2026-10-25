@@ -7,16 +7,29 @@ import { PageHeader, Loading, ErrorBar } from '../../components/common';
 import { useAuth } from '../../lib/auth';
 import { useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
-import { loadServiceBundle, photoStagesDone, type ServiceBundle } from '../../lib/services';
+import { loadServiceBundle, photoStagesDone, splitLines, usesEquipment, type ServiceBundle } from '../../lib/services';
 import { useServicePresence } from '../../lib/presence';
 import { StepDatos } from './StepDatos';
 import { StepEquipos } from './StepEquipos';
 import { StepChecklist } from './StepChecklist';
 import { StepFotos } from './StepFotos';
+import { StepFotosSecciones } from './StepFotosSecciones';
 import { StepHallazgos } from './StepHallazgos';
+import { StepTrabajos } from './StepTrabajos';
+import { StepCierre } from './StepCierre';
 import { StepInforme } from './StepInforme';
 
-const STEPS = ['Datos del servicio', 'Equipos', 'Checklist', 'Fotografías', 'Hallazgos', 'Generar informe'];
+export type StepKey = 'datos' | 'equipos' | 'checklist' | 'fotos' | 'hallazgos' | 'trabajos' | 'cierre' | 'informe';
+
+/** Con equipos (aire acondicionado): checklist y hallazgos por equipo. Sin equipos: trabajos, fotos por sección y cierre. */
+const EQUIPMENT_STEPS: [StepKey, string][] = [
+  ['datos', 'Datos del servicio'], ['equipos', 'Equipos'], ['checklist', 'Checklist'], ['fotos', 'Fotografías'],
+  ['hallazgos', 'Hallazgos'], ['informe', 'Generar informe'],
+];
+const SERVICE_STEPS: [StepKey, string][] = [
+  ['datos', 'Datos del servicio'], ['trabajos', 'Trabajos realizados'], ['fotos', 'Fotografías'],
+  ['cierre', 'Conclusiones'], ['informe', 'Generar informe'],
+];
 
 const useStyles = makeStyles({
   steps: {
@@ -33,7 +46,7 @@ export interface StepProps {
   bundle: ServiceBundle;
   reload: () => Promise<void>;
   readOnly: boolean;
-  goTo: (step: number, before?: () => Promise<unknown>) => Promise<void>;
+  goTo: (step: StepKey, before?: () => Promise<unknown>) => Promise<void>;
 }
 
 /** Guarda borrador: cada paso registra aquí su función de guardado pendiente. */
@@ -45,9 +58,10 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
   const { can, profile } = useAuth();
   const cat = useCatalogs();
   const qs = new URLSearchParams(path.split('?')[1] ?? '');
-  const step = serviceId ? Math.min(6, Math.max(1, Number(qs.get('paso')) || 1)) : 1;
 
-  const [bundle, setBundle] = useState<ServiceBundle | null>(null);
+  const [loaded, setBundle] = useState<ServiceBundle | null>(null);
+  // Al pasar de un servicio a "Nuevo" (mismo asistente montado) no se usan los datos del anterior
+  const bundle = loaded && loaded.service.id === serviceId ? loaded : null;
   const [error, setError] = useState<string | null>(null);
   const [saveHandler, setSaveHandler] = useState<SaveHandler | null>(null);
   const [saving, setSaving] = useState(false);
@@ -67,7 +81,14 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
     reload();
   }, [reload]);
   // Paso al que se está yendo mientras se recargan los datos (el paso actual sigue visible)
-  const [pending, setPending] = useState<number | null>(null);
+  const [pending, setPending] = useState<StepKey | null>(null);
+
+  const withEquipment = !bundle || usesEquipment(bundle, cat.hasEquipment);
+  const steps = withEquipment ? EQUIPMENT_STEPS : SERVICE_STEPS;
+  // ?paso=fotos (o el número de paso de los enlaces antiguos); un paso que no existe en este recorrido vuelve a Datos
+  const raw = qs.get('paso') ?? '';
+  const asked = (/^\d+$/.test(raw) ? EQUIPMENT_STEPS[Number(raw) - 1]?.[0] : raw) as StepKey;
+  const step: StepKey = serviceId && steps.some(([k]) => k === asked) ? asked : 'datos';
 
   const others = useServicePresence(serviceId, true);
   // En pantallas angostas la barra de pasos se desplaza hasta el paso actual
@@ -78,7 +99,7 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
   const register = useCallback((h: SaveHandler | null) => setSaveHandler(() => h), []);
 
   /** Guarda el paso actual, trae los datos al día (cambios de otros usuarios) y recién entonces cambia de paso. */
-  const goTo = async (n: number, before?: () => Promise<unknown>) => {
+  const goTo = async (n: StepKey, before?: () => Promise<unknown>) => {
     if (!serviceId || pending) return;
     setPending(n);
     try {
@@ -95,18 +116,21 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
   const member = svc && [svc.created_by, svc.lead_tech_id, ...svc.support_tech_ids].includes(profile!.id);
   const readOnly = !!svc && !(can('servicios.editar_otros') || (can('servicios.editar_propios') && member));
 
-  const done = (n: number) => {
+  const done = (n: StepKey) => {
     if (!bundle) return false;
     const eq = bundle.equipment;
     switch (n) {
-      case 1: return true;
-      case 2: return eq.length > 0;
-      case 3: return eq.length > 0 && eq.every((e) => e.final_status !== 'Pendiente');
-      case 4: return eq.length > 0 && eq.every((e) => photoStagesDone(bundle.photos, e.id) === 3);
-      case 5: return eq.length > 0 && (bundle.findings.length > 0 || eq.every((e) => e.final_status === 'Conforme'));
-      case 6: return bundle.reports.length > 0;
+      case 'datos': return true;
+      case 'equipos': return eq.length > 0;
+      case 'checklist': return eq.length > 0 && eq.every((e) => e.final_status !== 'Pendiente');
+      case 'fotos': return withEquipment
+        ? eq.length > 0 && eq.every((e) => photoStagesDone(bundle.photos, e.id) === 3)
+        : bundle.photos.length > 0;
+      case 'hallazgos': return eq.length > 0 && (bundle.findings.length > 0 || eq.every((e) => e.final_status === 'Conforme'));
+      case 'trabajos': return bundle.service.work_items.length > 0;
+      case 'cierre': return splitLines(bundle.service.conclusions).length > 0;
+      case 'informe': return bundle.reports.length > 0;
     }
-    return false;
   };
 
   return (
@@ -157,9 +181,8 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
         </MessageBar>
       )}
       <div className={s.steps} ref={stepsRef}>
-        <TabList selectedValue={step} onTabSelect={(_, d) => goTo(d.value as number)} disabled={!serviceId || !!pending}>
-          {STEPS.map((label, i) => {
-            const n = i + 1;
+        <TabList selectedValue={step} onTabSelect={(_, d) => goTo(d.value as StepKey)} disabled={!serviceId || !!pending}>
+          {steps.map(([n, label], i) => {
             const ok = n !== step && done(n);
             return (
               <Tab key={n} value={n}>
@@ -170,7 +193,7 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
                     color: n === step || ok ? tokens.colorNeutralForegroundOnBrand : tokens.colorNeutralForeground2,
                   }}
                 >
-                  {ok ? <Checkmark16Filled /> : n}
+                  {ok ? <Checkmark16Filled /> : i + 1}
                 </span>
                 {label}
               </Tab>
@@ -181,12 +204,17 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
       {pending && <ProgressBar thickness="medium" style={{ marginTop: -12, marginBottom: 12 }} aria-label="Cargando paso" />}
       {error && <ErrorBar error={error} />}
       {serviceId && !bundle && !error && <Loading />}
-      {(!serviceId || bundle) && step === 1 && <StepDatos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
-      {bundle && step === 2 && <StepEquipos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && step === 3 && <StepChecklist bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && step === 4 && <StepFotos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && step === 5 && <StepHallazgos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
-      {bundle && step === 6 && <StepInforme bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
+      {(!serviceId || bundle) && step === 'datos' && (
+        <StepDatos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} withEquipment={withEquipment} />
+      )}
+      {bundle && step === 'equipos' && <StepEquipos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 'checklist' && <StepChecklist bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 'fotos' && withEquipment && <StepFotos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 'fotos' && !withEquipment && <StepFotosSecciones bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 'hallazgos' && <StepHallazgos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
+      {bundle && step === 'trabajos' && <StepTrabajos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
+      {bundle && step === 'cierre' && <StepCierre bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
+      {bundle && step === 'informe' && <StepInforme bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} withEquipment={withEquipment} />}
     </>
   );
 }

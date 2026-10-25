@@ -30,7 +30,7 @@ const useStyles = makeStyles({
   file: { display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, marginTop: '8px' },
 });
 
-export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
+export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: StepProps & { withEquipment: boolean }) {
   const s = useStyles();
   const cat = useCatalogs();
   const { can } = useAuth();
@@ -69,17 +69,33 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
   const checklistOk = eqs.filter((e) => e.final_status !== 'Pendiente').length;
   const stagesOk = eqs.reduce((n, e) => n + photoStagesDone(bundle.photos, e.id), 0);
   const ncWithout = bundle.results.filter((r) => r.result === 'NC' && !bundle.findings.some((f) => f.service_equipment_id === r.service_equipment_id && f.template_item_id === r.template_item_id)).length;
-  const issues = [
-    !eqs.length && 'el servicio no tiene equipos',
-    checklistOk < eqs.length && `checklist completo en ${checklistOk} de ${eqs.length} equipos`,
-    stagesOk < eqs.length * 3 && `${eqs.length * 3 - stagesOk} etapa(s) sin fotografías`,
-    ncWithout > 0 && `${ncWithout} actividad(es) “No conforme” sin hallazgo`,
-  ].filter(Boolean) as string[];
+  const emptyGroups = bundle.photoGroups.filter((g) => !bundle.photos.some((p) => p.group_id === g.id)).length;
+  const issues = (withEquipment
+    ? [
+        !eqs.length && 'el servicio no tiene equipos',
+        checklistOk < eqs.length && `checklist completo en ${checklistOk} de ${eqs.length} equipos`,
+        stagesOk < eqs.length * 3 && `${eqs.length * 3 - stagesOk} etapa(s) sin fotografías`,
+        ncWithout > 0 && `${ncWithout} actividad(es) “No conforme” sin hallazgo`,
+      ]
+    : [
+        !svc.work_items.length && 'no hay trabajos realizados',
+        !bundle.photos.length && 'no hay fotografías',
+        emptyGroups > 0 && `${emptyGroups} sección(es) de fotos vacía(s) (no saldrán en el informe)`,
+        !model?.conclusions.length && 'faltan las conclusiones',
+      ]).filter(Boolean) as string[];
 
   const ncCount = bundle.results.filter((r) => r.result === 'NC').length;
   const activities = eqs.reduce((n, e) => n + (e.checklist_template_id ? bundle.items[e.checklist_template_id]?.length ?? 0 : 0), 0);
   const highs = bundle.findings.filter((f) => f.priority === 'Alta').length;
-  const sections: [string, string, string][] = [
+  const serviceSections: [string, string, string][] = [
+    ['portada', 'Portada', `${svc.service_type} · ${svc.specialty} · ${cat.siteName(svc.site_id)}`],
+    ['memoria', 'Memoria descriptiva', `Fecha de ejecución ${model?.executionDate ?? ''}`],
+    ['detalles', 'Detalles previos y trabajos realizados', `${svc.prev_details.length} detalles · ${svc.work_items.length} trabajos`],
+    ['fotos', 'Registro fotográfico', `${bundle.photoGroups.length - emptyGroups} secciones · ${bundle.photos.length} fotos`],
+    ['conclusiones', 'Conclusiones, observaciones y recomendaciones',
+      `${model?.conclusions.length ?? 0} · ${model?.observations.length ?? 0} · ${model?.recommendations.length ?? 0}`],
+  ];
+  const sections: [string, string, string][] = !withEquipment ? serviceSections : [
     ['portada', 'Portada', `${svc.service_type} · ${svc.specialty} · ${cat.siteName(svc.site_id)}`],
     ['memoria', '1. Memoria descriptiva', `Fecha de ejecución ${model?.executionDate ?? ''}`],
     ['detalles', '2. Detalles previos', `${svc.prev_details.length} detalles + resumen de equipos`],
@@ -147,7 +163,9 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
               <MessageBarBody>
                 {issues.length
                   ? `Revisa antes de generar: ${issues.join(', ')}. Puedes generar igualmente un borrador.`
-                  : `Validación completa: checklist en ${eqs.length} de ${eqs.length} equipos, ${bundle.photos.length} fotos con las 3 etapas cubiertas y hallazgos registrados para cada “No conforme”.`}
+                  : withEquipment
+                    ? `Validación completa: checklist en ${eqs.length} de ${eqs.length} equipos, ${bundle.photos.length} fotos con las 3 etapas cubiertas y hallazgos registrados para cada “No conforme”.`
+                    : `Validación completa: ${svc.work_items.length} trabajos, ${bundle.photos.length} fotos y conclusiones registradas.`}
               </MessageBarBody>
             </MessageBar>
           </Section>
@@ -164,7 +182,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo }: StepProps) {
         </Section>
       </div>
       <div className={s.footer}>
-        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(5)}>Anterior</AsyncButton>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(withEquipment ? 'hallazgos' : 'cierre')}>Anterior</AsyncButton>
         <span style={{ flex: 1 }} />
         {can('informes.pdf') && (
           <Button icon={<Print20Regular />} disabled={!model} style={{ marginRight: 8 }}

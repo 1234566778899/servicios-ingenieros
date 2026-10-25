@@ -1,16 +1,15 @@
 import { useRef, useState } from 'react';
 import {
-  Badge, Button, Caption1, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown,
-  Field, Input, Option, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens,
+  Badge, Button, Caption1, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens,
 } from '@fluentui/react-components';
 import {
-  Add24Regular, ArrowLeft20Regular, ArrowRight20Regular, CheckmarkCircle16Filled, ChevronLeft20Regular,
-  ChevronRight20Regular, Delete20Regular, Dismiss20Regular, Save20Regular,
+  Add24Regular, ArrowLeft20Regular, ArrowRight20Regular, CheckmarkCircle16Filled, ChevronLeft20Regular, ChevronRight20Regular,
 } from '@fluentui/react-icons';
 import { AsyncButton, Section } from '../../components/common';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { EquipmentRail } from '../../components/EquipmentRail';
 import { PhotoThumb } from '../../components/PhotoThumb';
+import { PhotoViewer } from '../../components/PhotoViewer';
 import { useCatalogs } from '../../lib/catalogs';
 import { supabase, must } from '../../lib/supabase';
 import { compressImage, logActivity, photoStagesDone, syncPhotoStatus } from '../../lib/services';
@@ -78,7 +77,7 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
           const up = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
           if (up.error) throw new Error(up.error.message);
           const caption = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
-          const ins = await supabase.from('photos').insert({ service_equipment_id: selId, stage, position: start + i, storage_path: path, caption });
+          const ins = await supabase.from('photos').insert({ service_id: svc.id, service_equipment_id: selId, stage, position: start + i, storage_path: path, caption });
           if (ins.error) {
             await supabase.storage.from('photos').remove([path]);
             throw new Error(ins.error.message);
@@ -110,10 +109,10 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
   /** Mueve la foto a otra etapa y/o posición, renumerando las etapas afectadas. */
   const move = async (p: Photo, stage: Stage, position: number) => {
     if (p.stage === stage && p.position === position) return;
-    const dest = stagePhotos(p.service_equipment_id, stage).filter((x) => x.id !== p.id);
+    const dest = stagePhotos(p.service_equipment_id!, stage).filter((x) => x.id !== p.id);
     dest.splice(Math.min(Math.max(position - 1, 0), dest.length), 0, p);
     await persistOrder(dest, stage);
-    if (p.stage !== stage) await persistOrder(stagePhotos(p.service_equipment_id, p.stage).filter((x) => x.id !== p.id), p.stage);
+    if (p.stage !== stage) await persistOrder(stagePhotos(p.service_equipment_id!, p.stage!).filter((x) => x.id !== p.id), p.stage!);
     await reload();
   };
 
@@ -121,7 +120,7 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
     const p = toDelete!;
     must(await supabase.from('photos').delete().eq('id', p.id));
     await supabase.storage.from('photos').remove([p.storage_path]);
-    await persistOrder(stagePhotos(p.service_equipment_id, p.stage).filter((x) => x.id !== p.id), p.stage);
+    await persistOrder(stagePhotos(p.service_equipment_id!, p.stage!).filter((x) => x.id !== p.id), p.stage!);
     await logActivity(svc.id, `eliminó una foto de ${eq?.code}`);
     await syncPhotoStatus(svc.id);
     setToDelete(null);
@@ -211,8 +210,8 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
         </Section>
       </div>
       <div className={s.footer}>
-        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo(3)}>Anterior</AsyncButton>
-        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo(5, () => syncPhotoStatus(svc.id))}>
+        <AsyncButton icon={<ArrowLeft20Regular />} onClick={() => goTo('checklist')}>Anterior</AsyncButton>
+        <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after" onClick={() => goTo('hallazgos', () => syncPhotoStatus(svc.id))}>
           Siguiente: Hallazgos
         </AsyncButton>
       </div>
@@ -220,8 +219,11 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
       {viewer && (
         <PhotoViewer
           photo={viewer}
-          photos={photosOf(viewer.service_equipment_id).sort((a, b) => STAGES.findIndex((x) => x.id === a.stage) - STAGES.findIndex((x) => x.id === b.stage) || a.position - b.position)}
-          stageCount={(st) => stagePhotos(viewer.service_equipment_id, st).length}
+          photos={photosOf(viewer.service_equipment_id!).sort((a, b) => STAGES.findIndex((x) => x.id === a.stage) - STAGES.findIndex((x) => x.id === b.stage) || a.position - b.position)}
+          slots={STAGES}
+          slotOf={(p) => p.stage!}
+          slotLabel="Etapa"
+          slotCount={(st) => stagePhotos(viewer.service_equipment_id!, st as Stage).length}
           code={eq?.code ?? ''}
           readOnly={readOnly}
           onNavigate={setViewer}
@@ -229,7 +231,7 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
           onDelete={() => setToDelete(viewer)}
           onSave={async (caption, stage, position) => {
             must(await supabase.from('photos').update({ caption }).eq('id', viewer.id));
-            await move(viewer, stage, position);
+            await move(viewer, stage as Stage, position);
             await reload();
             setViewer(null);
             notify('Cambios guardados');
@@ -240,78 +242,5 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
         body={`Se eliminará “${toDelete?.caption ?? 'la foto'}” de la etapa ${STAGES.find((x) => x.id === toDelete?.stage)?.label}. Ya no aparecerá en el informe generado.`}
         onConfirm={remove} onCancel={() => setToDelete(null)} />
     </>
-  );
-}
-
-function PhotoViewer({ photo, photos, stageCount, code, readOnly, onNavigate, onClose, onDelete, onSave }: {
-  photo: Photo; photos: Photo[]; stageCount: (st: Stage) => number; code: string; readOnly: boolean;
-  onNavigate: (p: Photo) => void; onClose: () => void; onDelete: () => void;
-  onSave: (caption: string, stage: Stage, position: number) => Promise<void>;
-}) {
-  const [caption, setCaption] = useState(photo.caption ?? '');
-  const [stage, setStage] = useState<Stage>(photo.stage);
-  const [position, setPosition] = useState(photo.position);
-  const [busy, setBusy] = useState(false);
-  const idx = photos.findIndex((p) => p.id === photo.id);
-  const inStage = photos.filter((p) => p.stage === photo.stage);
-  const stageLabel = STAGES.find((x) => x.id === photo.stage)?.label;
-  // Si cambia de etapa puede ir al final de la nueva (n + 1)
-  const maxPos = stage === photo.stage ? stageCount(stage) : stageCount(stage) + 1;
-
-  const go = (p?: Photo) => {
-    if (!p) return;
-    setCaption(p.caption ?? '');
-    setStage(p.stage);
-    setPosition(p.position);
-    onNavigate(p);
-  };
-
-  return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 920, width: '92vw' }}>
-        <DialogBody>
-          <DialogTitle action={<Button appearance="subtle" icon={<Dismiss20Regular />} aria-label="Cerrar" onClick={onClose} />}>
-            {code} · {stageLabel} · Foto {inStage.findIndex((p) => p.id === photo.id) + 1} de {inStage.length}
-          </DialogTitle>
-          <DialogContent>
-            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 8 }}>
-              <Button icon={<ChevronLeft20Regular />} disabled={idx <= 0} onClick={() => go(photos[idx - 1])} aria-label="Anterior" />
-              <PhotoThumb path={photo.storage_path} alt={photo.caption ?? ''} height="52vh" fit="contain" />
-              <Button icon={<ChevronRight20Regular />} disabled={idx >= photos.length - 1} onClick={() => go(photos[idx + 1])} aria-label="Siguiente" />
-            </div>
-            <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginTop: 16 }}>
-              <Field label="Pie de foto / comentario">
-                <Input value={caption} disabled={readOnly} onChange={(_, d) => setCaption(d.value)} />
-              </Field>
-              <Field label="Etapa">
-                <Dropdown disabled={readOnly} value={STAGES.find((x) => x.id === stage)?.label} selectedOptions={[stage]}
-                  onOptionSelect={(_, d) => {
-                    const st = d.optionValue as Stage;
-                    setStage(st);
-                    setPosition(st === photo.stage ? photo.position : stageCount(st) + 1);
-                  }}>
-                  {STAGES.map((x) => <Option key={x.id} value={x.id}>{x.label}</Option>)}
-                </Dropdown>
-              </Field>
-              <Field label="Posición">
-                <Dropdown disabled={readOnly} value={String(position)} selectedOptions={[String(position)]} onOptionSelect={(_, d) => setPosition(Number(d.optionValue))}>
-                  {Array.from({ length: Math.max(1, maxPos) }, (_, i) => i + 1).map((n) => <Option key={n} value={String(n)}>{String(n)}</Option>)}
-                </Dropdown>
-              </Field>
-            </div>
-          </DialogContent>
-          <DialogActions fluid>
-            {!readOnly && <Button icon={<Delete20Regular />} onClick={onDelete} style={{ marginRight: 'auto' }}>Eliminar fotografía</Button>}
-            <Button onClick={onClose}>Cancelar</Button>
-            {!readOnly && (
-              <Button appearance="primary" icon={<Save20Regular />} disabled={busy}
-                onClick={async () => { setBusy(true); try { await onSave(caption, stage, position); } finally { setBusy(false); } }}>
-                Guardar cambios
-              </Button>
-            )}
-          </DialogActions>
-        </DialogBody>
-      </DialogSurface>
-    </Dialog>
   );
 }

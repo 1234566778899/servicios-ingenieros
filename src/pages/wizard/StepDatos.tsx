@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Caption1, Checkbox, Dropdown, Field, Input, Option, Radio, RadioGroup, Text, Textarea,
+  Button, Caption1, Dropdown, Field, Input, Option, Radio, RadioGroup, Text, Textarea,
   Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles, tokens,
 } from '@fluentui/react-components';
-import { Add20Regular, ArrowClockwise16Regular, ArrowRight20Regular, Delete16Regular } from '@fluentui/react-icons';
+import { ArrowClockwise16Regular, ArrowRight20Regular } from '@fluentui/react-icons';
 import { AsyncButton, Section, ErrorBar } from '../../components/common';
+import { ConceptList } from '../../components/Concepts';
 import { DateInput } from '../../components/DateInput';
 import { useAuth } from '../../lib/auth';
 import { optionNames, useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
 import { supabase } from '../../lib/supabase';
-import { logActivity, type ServiceBundle } from '../../lib/services';
+import { addInventoryToService, loadSiteInventory, logActivity, rememberConcepts, type ServiceBundle } from '../../lib/services';
 import { coverTitle, memoria, equipmentSummary, DEFAULT_PREV_DETAILS } from '../../lib/texts';
 import { fmtDateTime, today } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
@@ -44,9 +45,9 @@ const LABELS: Record<keyof Form, string> = {
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
-export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
+export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEquipment }: {
   bundle: ServiceBundle | null; reload: () => Promise<void>; readOnly: boolean; goTo: StepProps['goTo'];
-  registerSave: (h: SaveHandler | null) => void;
+  registerSave: (h: SaveHandler | null) => void; withEquipment: boolean;
 }) {
   const s = useStyles();
   const cat = useCatalogs();
@@ -67,7 +68,6 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
   );
   const [autoTitle, setAutoTitle] = useState(!svc?.cover_title);
   const [autoDesc, setAutoDesc] = useState(!svc?.description);
-  const [newDetail, setNewDetail] = useState('');
   const [nextCode, setNextCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ server: Service; fields: (keyof Form)[] } | null>(null);
@@ -75,6 +75,9 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
 
   const site = cat.sites.find((x) => x.id === form.site_id);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
+  // El recorrido sigue la especialidad elegida (un servicio que ya tiene equipos se queda con ellos)
+  const equipmentMode = cat.hasEquipment(form.specialty) || (!!bundle?.equipment.length && withEquipment);
+  const nextStep = equipmentMode ? 'equipos' : 'trabajos';
 
   useEffect(() => {
     if (!svc) supabase.rpc('peek_service_code').then(({ data }) => setNextCode(data ?? ''));
@@ -82,10 +85,10 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
 
   // Textos automáticos mientras el usuario no los edite a mano
   useEffect(() => {
-    if (autoTitle) set('cover_title', coverTitle(form.service_type, form.specialty, site));
-    if (autoDesc) set('description', memoria(form.service_type, form.specialty, site));
+    if (autoTitle) set('cover_title', coverTitle(form.service_type, form.specialty, site, equipmentMode));
+    if (autoDesc) set('description', memoria(form.service_type, form.specialty, site, equipmentMode));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.service_type, form.specialty, site, autoTitle, autoDesc]);
+  }, [form.service_type, form.specialty, site, autoTitle, autoDesc, equipmentMode]);
 
   // Servicio nuevo: si los catálogos aún cargaban al abrir, toma la primera opción activa al llegar
   useEffect(() => {
@@ -105,7 +108,8 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
     [cat.reportTemplates],
   );
   useEffect(() => {
-    if (form.report_template_id || !templates.length) return;
+    // Espera a conocer el tipo de servicio: si no, cae en la primera plantilla por orden alfabético
+    if (form.report_template_id || !templates.length || !form.service_type) return;
     const t = templates.find((x) => x.service_type === form.service_type && x.status === 'Activa') ?? templates.find((x) => x.status === 'Activa');
     if (t) set('report_template_id', t.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,13 +167,27 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
         const { data, error } = await supabase.from('services').insert(payload(f)).select('id, code').single();
         if (error) throw new Error(error.message);
         await logActivity(data.id, 'creó el servicio');
-        notify(`Servicio ${data.code} creado`);
-        navigate(`/servicios/${data.id}/editar?paso=2`);
+        await rememberConcepts('detalle', '', f.prev_details);
+        // Con equipos: se precargan los del inventario de la sede (luego se quitan los que no se atendieron)
+        let loaded = 0;
+        if (cat.hasEquipment(f.specialty)) {
+          try {
+            const inv = await loadSiteInventory(f.site_id);
+            await addInventoryToService(data.id, inv);
+            loaded = inv.length;
+            if (loaded) await logActivity(data.id, `cargó ${loaded} equipos del inventario de la sede`);
+          } catch (e: any) {
+            notify('No se pudieron cargar los equipos de la sede', 'warning', e.message);
+          }
+        }
+        notify(`Servicio ${data.code} creado`, 'success', loaded ? `Se cargaron ${loaded} equipos de ${cat.siteName(f.site_id)}.` : undefined);
+        navigate(`/servicios/${data.id}/editar?paso=${cat.hasEquipment(f.specialty) ? 'equipos' : 'trabajos'}`);
         return false; // la navegación ya cambia de pantalla
       }
       if (FIELDS.every((k) => same(f[k], current[k]))) return true;
       const ok = await update(current, f);
       if (ok) {
+        if (!same(f.prev_details, current.prev_details)) await rememberConcepts('detalle', '', f.prev_details);
         const changed = FIELDS.filter((k) => !same(f[k], current[k])).map((k) => `“${LABELS[k]}”`);
         await logActivity(current.id, `editó ${changed.slice(0, 2).join(', ')}${changed.length > 2 ? '…' : ''}`);
         notify('Cambios guardados');
@@ -305,37 +323,19 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
 
         <div className={s.col}>
           <Section title="Detalles previos" subtitle="Sección 2">
-            {form.prev_details.map((d, i) => (
-              <div key={i} className={s.detail}>
-                <Checkbox checked label={d} disabled />
-                <span style={{ flex: 1 }} />
-                {!readOnly && (
-                  <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label={`Quitar ${d}`}
-                    onClick={() => set('prev_details', form.prev_details.filter((_, j) => j !== i))} />
-                )}
-              </div>
-            ))}
-            {!readOnly && (
-              <div className={s.detail} style={{ marginTop: 8 }}>
-                <Input style={{ flex: 1 }} size="small" placeholder="Nuevo detalle…" value={newDetail} onChange={(_, d) => setNewDetail(d.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newDetail.trim()) { set('prev_details', [...form.prev_details, newDetail.trim()]); setNewDetail(''); }
-                  }} />
-                <Button size="small" icon={<Add20Regular />} disabled={!newDetail.trim()}
-                  onClick={() => { set('prev_details', [...form.prev_details, newDetail.trim()]); setNewDetail(''); }}>
-                  Agregar detalle
-                </Button>
-              </div>
-            )}
+            <ConceptList kind="detalle" specialty="" items={form.prev_details} readOnly={readOnly}
+              onChange={(v) => set('prev_details', v)} placeholder="Nuevo detalle…" />
           </Section>
-          <Section title="Resumen de equipos" subtitle="automático">
-            <Text block>
-              {bundle?.equipment.length
-                ? `• ${equipmentSummary(form.service_type, bundle.equipment, cat.typeName)}`
-                : 'Aún no hay equipos.'}
-            </Text>
-            <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>Se completa con los equipos del Paso 2.</Caption1>
-          </Section>
+          {equipmentMode && (
+            <Section title="Resumen de equipos" subtitle="automático">
+              <Text block>
+                {bundle?.equipment.length
+                  ? `• ${equipmentSummary(form.service_type, bundle.equipment, cat.typeName)}`
+                  : svc ? 'Aún no hay equipos.' : 'Al crear el servicio se cargan los equipos registrados de la sede.'}
+              </Text>
+              <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>Se completa con los equipos del Paso 2.</Caption1>
+            </Section>
+          )}
           <Section title="Formato del informe">
             <Field label="Plantilla" required>
               <Dropdown disabled={readOnly} placeholder="Selecciona"
@@ -356,11 +356,11 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave }: {
         <span />
         <AsyncButton appearance="primary" icon={<ArrowRight20Regular />} iconPosition="after"
           onClick={async () => {
-            if (readOnly) return goTo(2);
+            if (readOnly) return goTo(nextStep);
             if (!svc) return save();
-            if (await save()) await goTo(2);
+            if (await save()) await goTo(nextStep);
           }}>
-          {svc ? 'Siguiente: Equipos' : 'Crear y continuar'}
+          {svc ? `Siguiente: ${equipmentMode ? 'Equipos' : 'Trabajos realizados'}` : 'Crear y continuar'}
         </AsyncButton>
       </div>
 

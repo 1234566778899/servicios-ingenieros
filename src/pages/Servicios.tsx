@@ -199,7 +199,7 @@ export function Servicios() {
                         {canEdit(r) && <MenuItem icon={<Edit20Regular />} onClick={() => navigate(`/servicios/${r.id}/editar`)}>Editar</MenuItem>}
                         {can('servicios.crear') && <MenuItem icon={<Copy20Regular />} onClick={() => duplicate(r)}>Duplicar</MenuItem>}
                         {canEdit(r) && (can('informes.word') || can('informes.pdf')) && (
-                          <MenuItem icon={<DocumentArrowRight20Regular />} onClick={() => navigate(`/servicios/${r.id}/editar?paso=6`)}>
+                          <MenuItem icon={<DocumentArrowRight20Regular />} onClick={() => navigate(`/servicios/${r.id}/editar?paso=informe`)}>
                             Generar informe
                           </MenuItem>
                         )}

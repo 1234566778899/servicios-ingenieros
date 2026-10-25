@@ -20,20 +20,27 @@ export interface Site {
 }
 export interface EquipmentType { id: string; name: string; default_unit: string | null }
 /** Opción de catálogo simple: tipos de servicio y especialidades */
-export interface CatalogOption { id: string; name: string; active: boolean; position: number }
+export interface CatalogOption { id: string; name: string; active: boolean; position: number; has_equipment?: boolean }
+
+/** Equipo del inventario de una sede; al agregarlo a un servicio se copia en service_equipment. */
+export interface SiteEquipment {
+  id: string; site_id: string; code: string; equipment_type_id: string | null; system: string | null;
+  capacity: string | null; unit: string | null; brand: string | null; model: string | null; serial: string | null;
+  location: string | null; active: boolean; position: number; updated_at: string;
+}
 
 export interface Service {
   id: string; code: string; work_order: string | null; service_type: string;
   client_id: string; site_id: string; specialty: string; execution_date: string;
   lead_tech_id: string | null; support_tech_ids: string[]; site_contact: string | null;
-  cover_title: string | null; description: string | null; prev_details: string[];
+  cover_title: string | null; description: string | null; prev_details: string[]; work_items: string[];
   report_template_id: string | null; status: ServiceStatus;
-  conclusions: string | null; recommendations: string | null; version: number;
+  conclusions: string | null; observations: string | null; recommendations: string | null; version: number;
   created_by: string | null; updated_by: string | null; created_at: string; updated_at: string;
 }
 
 export interface ServiceEquipment {
-  id: string; service_id: string; checklist_template_id: string | null; position: number;
+  id: string; service_id: string; site_equipment_id: string | null; checklist_template_id: string | null; position: number;
   final_status: 'Pendiente' | 'Conforme' | 'No conforme'; observation: string | null;
   code: string | null; equipment_type_id: string | null; capacity: string | null; unit: string | null;
   brand: string | null; model: string | null; serial: string | null;
@@ -50,9 +57,16 @@ export interface ChecklistResult {
   id?: string; service_equipment_id: string; template_item_id: string;
   result: 'C' | 'NC' | 'NA' | null; value: string | null;
 }
+/** Foto de un equipo (con etapa) o de una sección del servicio (servicios sin equipos). */
 export interface Photo {
-  id: string; service_equipment_id: string; stage: Stage; position: number;
-  storage_path: string; caption: string | null;
+  id: string; service_id: string; service_equipment_id: string | null; group_id: string | null;
+  stage: Stage | null; position: number; storage_path: string; caption: string | null;
+}
+export interface PhotoGroup { id: string; service_id: string; position: number; title: string; description: string | null }
+
+export type ConceptKind = 'detalle' | 'trabajo' | 'foto' | 'conclusion' | 'observacion' | 'recomendacion';
+export interface Concept {
+  id: string; kind: ConceptKind; specialty: string; text: string; uses: number; last_used_at: string | null; created_by: string | null;
 }
 export interface Finding {
   id: string; service_id: string; service_equipment_id: string; template_item_id: string | null;
