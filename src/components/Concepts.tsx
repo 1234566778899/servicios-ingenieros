@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Caption1, Combobox, Option, Textarea, makeStyles, tokens } from '@fluentui/react-components';
+import { Button, Caption1, Combobox, Option, Textarea, Tooltip, makeStyles, tokens } from '@fluentui/react-components';
 import { Add20Regular, ArrowDown16Regular, ArrowUp16Regular, Delete16Regular } from '@fluentui/react-icons';
 import { supabase } from '../lib/supabase';
 import { ImproveButton } from './ImproveWriting';
@@ -7,10 +7,10 @@ import type { Concept, ConceptKind } from '../lib/types';
 
 const useStyles = makeStyles({
   list: { display: 'flex', flexDirection: 'column', gap: '6px' },
-  row: { display: 'grid', gridTemplateColumns: '24px 1fr auto', gap: '6px', alignItems: 'start' },
+  // Las filas registradas y la de agregar comparten columnas: número · texto · acciones
+  row: { display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr) 96px', gap: '6px', alignItems: 'start' },
   mark: { paddingTop: '6px', textAlign: 'right', color: tokens.colorNeutralForeground3 },
-  tools: { display: 'flex', alignItems: 'center' },
-  add: { display: 'flex', gap: '6px', alignItems: 'center', marginTop: '6px' },
+  tools: { display: 'flex', alignItems: 'center', paddingTop: '2px' },
   option: { whiteSpace: 'normal' },
 });
 
@@ -135,21 +135,26 @@ export function ConceptList({ kind, specialty, items, onChange, readOnly, placeh
       ))}
       {!items.length && readOnly && <Caption1>{emptyText ?? '—'}</Caption1>}
       {!readOnly && (
-        <div className={s.add} onKeyDown={(e) => {
+        <div className={s.row} onKeyDown={(e) => {
           if (e.key !== 'Enter') return;
           if (picked.current) picked.current = false;
           else if (draft.trim()) add(draft);
         }}>
+          <Caption1 className={s.mark}>{numbered ? `${items.length + 1}.` : '•'}</Caption1>
           <ConceptInput kind={kind} specialty={specialty} value={draft} onChange={(v) => { picked.current = false; setDraft(v); }} exclude={items}
             onPick={(t) => { picked.current = true; add(t); }}
             placeholder={placeholder ?? 'Escribe o elige un concepto guardado…'} />
-          <Button icon={<Add20Regular />} disabled={!draft.trim()} onClick={() => add(draft)}>Agregar</Button>
-          {/* Con texto en el campo se mejora ese borrador; si está vacío, la lista ya agregada */}
-          {draft.trim()
-            ? <ImproveButton texts={[draft]} kind={kind} specialty={specialty} onApply={([t]) => setDraft(t)}
-                tooltip="Mejorar redacción del texto que estás escribiendo" />
-            : items.length > 0 && <ImproveButton texts={items} kind={kind} specialty={specialty} onApply={onChange}
-                tooltip="Mejorar redacción de la lista" />}
+          <div className={s.tools}>
+            <Tooltip content="Agregar" relationship="label">
+              <Button size="small" appearance="subtle" icon={<Add20Regular />} disabled={!draft.trim()} onClick={() => add(draft)} />
+            </Tooltip>
+            {/* Con texto en el campo se mejora ese borrador; si está vacío, la lista ya agregada */}
+            {draft.trim()
+              ? <ImproveButton size="small" texts={[draft]} kind={kind} specialty={specialty} onApply={([t]) => setDraft(t)}
+                  tooltip="Mejorar redacción del texto que estás escribiendo" />
+              : items.length > 0 && <ImproveButton size="small" texts={items} kind={kind} specialty={specialty} onApply={onChange}
+                  tooltip="Mejorar redacción de la lista" />}
+          </div>
         </div>
       )}
     </div>

@@ -17,7 +17,7 @@ import type { SaveHandler, StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' },
-  texts: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  texts: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
   pre: { whiteSpace: 'pre-wrap', padding: '10px 12px', backgroundColor: tokens.colorNeutralBackground3, borderRadius: tokens.borderRadiusMedium, minHeight: '80px' },
 });
 
