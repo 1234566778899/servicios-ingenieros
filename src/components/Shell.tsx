@@ -13,6 +13,7 @@ import logo from '../assets/logo.png';
 import { useAuth } from '../lib/auth';
 import { useRouter } from '../lib/router';
 import { useConnection } from '../lib/connection';
+import { useCatalogs } from '../lib/catalogs';
 import { useCompact } from '../lib/media';
 
 const Home = bundleIcon(Home20Filled, Home20Regular);
@@ -48,11 +49,17 @@ export function Shell({ children }: { children: ReactNode }) {
   const { profile, roleName, can, signOut } = useAuth();
   const { path, navigate } = useRouter();
   const conn = useConnection();
+  const cat = useCatalogs();
   const [q, setQ] = useState('');
   const compact = useCompact();
   const [menuOpen, setMenuOpen] = useState(false);
   // Al navegar en modo compacto se cierra el menú
   useEffect(() => setMenuOpen(false), [path]);
+  // Al volver la conexión se reintenta lo que no cargó
+  useEffect(() => {
+    if (conn.online && cat.error) cat.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conn.online]);
 
   const root = '/' + (path.split('/')[1] ?? '');
   const adminItems = ADMIN_ITEMS.filter((i) => can(i.perm));
@@ -120,6 +127,16 @@ export function Shell({ children }: { children: ReactNode }) {
             </MessageBarBody>
             <MessageBarActions>
               <Button size="small" onClick={conn.retry}>Reintentar ahora</Button>
+            </MessageBarActions>
+          </MessageBar>
+        )}
+        {conn.online && cat.error && (
+          <MessageBar intent="warning" layout="singleline" style={{ borderRadius: 0 }}>
+            <MessageBarBody>
+              No se pudieron cargar las listas de clientes, sedes o usuarios; algunos nombres o filtros pueden faltar.
+            </MessageBarBody>
+            <MessageBarActions>
+              <Button size="small" onClick={() => void cat.reload()}>Reintentar</Button>
             </MessageBarActions>
           </MessageBar>
         )}

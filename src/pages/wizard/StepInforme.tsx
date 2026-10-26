@@ -70,7 +70,10 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
   const stagesOk = eqs.reduce((n, e) => n + photoStagesDone(bundle.photos, e.id), 0);
   const ncWithout = bundle.results.filter((r) => r.result === 'NC' && !bundle.findings.some((f) => f.service_equipment_id === r.service_equipment_id && f.template_item_id === r.template_item_id)).length;
   const emptyGroups = bundle.photoGroups.filter((g) => !bundle.photos.some((p) => p.group_id === g.id)).length;
-  const issues = (withEquipment
+  const failed = model?.failedPhotos ?? 0;
+  const issues = [
+    failed > 0 && `${failed} foto(s) no se pudieron descargar y saldrían en blanco (revisa la conexión y vuelve a abrir este paso)`,
+    ...(withEquipment
     ? [
         !eqs.length && 'el servicio no tiene equipos',
         checklistOk < eqs.length && `checklist completo en ${checklistOk} de ${eqs.length} equipos`,
@@ -82,7 +85,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
         !bundle.photos.length && 'no hay fotografías',
         emptyGroups > 0 && `${emptyGroups} sección(es) de fotos vacía(s) (no saldrán en el informe)`,
         !model?.conclusions.length && 'faltan las conclusiones',
-      ]).filter(Boolean) as string[];
+      ])].filter(Boolean) as string[];
 
   const ncCount = bundle.results.filter((r) => r.result === 'NC').length;
   const activities = eqs.reduce((n, e) => n + (e.checklist_template_id ? bundle.items[e.checklist_template_id]?.length ?? 0 : 0), 0);

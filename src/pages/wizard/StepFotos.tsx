@@ -12,7 +12,7 @@ import { PhotoThumb } from '../../components/PhotoThumb';
 import { PhotoViewer } from '../../components/PhotoViewer';
 import { useCatalogs } from '../../lib/catalogs';
 import { supabase, must } from '../../lib/supabase';
-import { compressImage, logActivity, photoStagesDone, syncPhotoStatus } from '../../lib/services';
+import { logActivity, photoStagesDone, removePhotoFiles, savePhotoOrder, settleLimited, syncPhotoStatus, uploadPhoto } from '../../lib/services';
 import { useNotify } from '../../lib/toast';
 import { STAGES, type Photo, type Stage } from '../../lib/types';
 import type { StepProps } from './ServicioWizard';
@@ -42,7 +42,7 @@ const useStyles = makeStyles({
 
 const byPosition = (a: Photo, b: Photo) => a.position - b.position;
 
-export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
+export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) {
   const s = useStyles();
   const cat = useCatalogs();
   const notify = useNotify();
@@ -70,21 +70,17 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
     setUploading(stage);
     setProgress({ done: 0, total: imgs.length });
     try {
-      const results = await Promise.allSettled(
-        imgs.map(async (file, i) => {
-          const blob = await compressImage(file);
+      const results = await settleLimited(imgs, 3, async (file, i) => {
           const path = `${svc.id}/${selId}/${crypto.randomUUID()}.jpg`;
-          const up = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
-          if (up.error) throw new Error(up.error.message);
+          await uploadPhoto(path, file);
           const caption = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
           const ins = await supabase.from('photos').insert({ service_id: svc.id, service_equipment_id: selId, stage, position: start + i, storage_path: path, caption });
           if (ins.error) {
-            await supabase.storage.from('photos').remove([path]);
+            await removePhotoFiles([path]);
             throw new Error(ins.error.message);
           }
           setProgress((p) => ({ ...p, done: p.done + 1 }));
-        }),
-      );
+        });
       const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
       if (failed.length) notify(`${failed.length} foto(s) no se pudieron subir`, 'error', failed[0].reason?.message);
       await logActivity(svc.id, `subió ${imgs.length - failed.length} foto(s) (${stage}) de ${eq?.code}`);
@@ -97,36 +93,38 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
     }
   };
 
-  /** Guarda el orden 1..n de una etapa (solo las filas que cambian). */
-  const persistOrder = async (list: Photo[], stage: Stage) => {
-    await Promise.all(
-      list.map((p, i) => (p.position !== i + 1 || p.stage !== stage
-        ? supabase.from('photos').update({ position: i + 1, stage }).eq('id', p.id)
-        : null)),
-    );
-  };
-
-  /** Mueve la foto a otra etapa y/o posición, renumerando las etapas afectadas. */
+  /** Mueve la foto a otra etapa y/o posición: se ve al instante y se guardan solo las fotos que cambian. */
   const move = async (p: Photo, stage: Stage, position: number) => {
-    if (p.stage === stage && p.position === position) return;
     const dest = stagePhotos(p.service_equipment_id!, stage).filter((x) => x.id !== p.id);
     dest.splice(Math.min(Math.max(position - 1, 0), dest.length), 0, p);
-    await persistOrder(dest, stage);
-    if (p.stage !== stage) await persistOrder(stagePhotos(p.service_equipment_id!, p.stage!).filter((x) => x.id !== p.id), p.stage!);
-    await reload();
+    const changes: Photo[] = dest.map((x, i) => ({ ...x, position: i + 1, stage }));
+    if (p.stage !== stage) {
+      changes.push(...stagePhotos(p.service_equipment_id!, p.stage!).filter((x) => x.id !== p.id).map((x, i) => ({ ...x, position: i + 1 })));
+    }
+    const before = bundle.photos;
+    patch((b) => ({ ...b, photos: b.photos.map((x) => changes.find((c) => c.id === x.id) ?? x) }));
+    try {
+      await savePhotoOrder(before, changes);
+    } catch (e: any) {
+      notify('No se pudo guardar el orden de las fotos', 'error', e.message);
+      await reload();
+    }
   };
 
+  /** Desaparece al instante; el borrado en la nube sigue por detrás (sin renumerar: el orden se muestra por posición). */
   const remove = async () => {
     const p = toDelete!;
-    must(await supabase.from('photos').delete().eq('id', p.id));
-    await supabase.storage.from('photos').remove([p.storage_path]);
-    await persistOrder(stagePhotos(p.service_equipment_id!, p.stage!).filter((x) => x.id !== p.id), p.stage!);
-    await logActivity(svc.id, `eliminó una foto de ${eq?.code}`);
-    await syncPhotoStatus(svc.id);
     setToDelete(null);
     setViewer(null);
-    notify('Fotografía eliminada');
-    await reload();
+    patch((b) => ({ ...b, photos: b.photos.filter((x) => x.id !== p.id) }));
+    try {
+      must(await supabase.from('photos').delete().eq('id', p.id));
+      notify('Fotografía eliminada');
+      await Promise.all([removePhotoFiles([p.storage_path]), logActivity(svc.id, `eliminó una foto de ${eq?.code}`), syncPhotoStatus(svc.id)]);
+    } catch (e: any) {
+      notify('No se pudo eliminar la foto', 'error', e.message);
+      await reload();
+    }
   };
 
   const pick = (stage: Stage) => {
@@ -231,9 +229,8 @@ export function StepFotos({ bundle, reload, readOnly, goTo }: StepProps) {
           onDelete={() => setToDelete(viewer)}
           onSave={async (caption, stage, position) => {
             must(await supabase.from('photos').update({ caption }).eq('id', viewer.id));
-            await move(viewer, stage as Stage, position);
-            await reload();
             setViewer(null);
+            await move({ ...viewer, caption }, stage as Stage, position);
             notify('Cambios guardados');
           }}
         />

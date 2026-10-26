@@ -3,7 +3,7 @@ import {
   Badge, Button, MessageBar, MessageBarBody, ProgressBar, Spinner, Tab, TabList, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Checkmark16Filled, Save20Regular } from '@fluentui/react-icons';
-import { PageHeader, Loading, ErrorBar } from '../../components/common';
+import { AsyncButton, PageHeader, Loading, ErrorBar } from '../../components/common';
 import { useAuth } from '../../lib/auth';
 import { useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
@@ -45,12 +45,17 @@ const useStyles = makeStyles({
 export interface StepProps {
   bundle: ServiceBundle;
   reload: () => Promise<void>;
+  /** Cambia los datos en pantalla al instante (el paso guarda en la nube por detrás y recarga si algo falla) */
+  patch: (fn: (b: ServiceBundle) => ServiceBundle) => void;
   readOnly: boolean;
   goTo: (step: StepKey, before?: () => Promise<unknown>) => Promise<void>;
 }
 
 /** Guarda borrador: cada paso registra aquí su función de guardado pendiente. */
-export type SaveHandler = () => Promise<boolean>;
+export type SaveHandler = (() => Promise<boolean>) & {
+  /** Hay cambios sin guardar (para avisar al cerrar la pestaña) */
+  dirty?: () => boolean;
+};
 
 export function ServicioWizard({ serviceId }: { serviceId?: string }) {
   const s = useStyles();
@@ -96,7 +101,20 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
   useEffect(() => {
     stepsRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
   }, [step, bundle]);
-  const register = useCallback((h: SaveHandler | null) => setSaveHandler(() => h), []);
+  const handlerRef = useRef<SaveHandler | null>(null);
+  const register = useCallback((h: SaveHandler | null) => {
+    handlerRef.current = h;
+    setSaveHandler(() => h);
+  }, []);
+  // Cerrar la pestaña o recargar con cambios sin guardar: el navegador pide confirmación
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (handlerRef.current?.dirty?.()) e.preventDefault();
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, []);
+  const patch = useCallback((fn: (b: ServiceBundle) => ServiceBundle) => setBundle((b) => b && fn(b)), []);
 
   /** Guarda el paso actual, trae los datos al día (cambios de otros usuarios) y recién entonces cambia de paso. */
   const goTo = async (n: StepKey, before?: () => Promise<unknown>) => {
@@ -145,7 +163,11 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
         badges={readOnly && <Badge appearance="tint" color="warning">Solo lectura</Badge>}
         actions={
           <>
-            <Button onClick={() => navigate(svc ? `/servicios/${svc.id}` : '/servicios')}>{svc ? 'Cerrar' : 'Cancelar'}</Button>
+            <AsyncButton onClick={async () => {
+              // Con un servicio ya creado se guarda antes de salir; si falla (validación, conflicto) se queda en el paso
+              if (svc && saveHandler && !readOnly && !(await saveHandler())) return;
+              navigate(svc ? `/servicios/${svc.id}` : '/servicios');
+            }} disabled={!!pending}>{svc ? 'Cerrar' : 'Cancelar'}</AsyncButton>
             {!readOnly && saveHandler && (
               <Button
                 icon={saving ? <Spinner size="tiny" /> : <Save20Regular />}
@@ -207,14 +229,14 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
       {(!serviceId || bundle) && step === 'datos' && (
         <StepDatos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} withEquipment={withEquipment} />
       )}
-      {bundle && step === 'equipos' && <StepEquipos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && step === 'checklist' && <StepChecklist bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && step === 'fotos' && withEquipment && <StepFotos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && step === 'fotos' && !withEquipment && <StepFotosSecciones bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} />}
-      {bundle && step === 'hallazgos' && <StepHallazgos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
-      {bundle && step === 'trabajos' && <StepTrabajos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
-      {bundle && step === 'cierre' && <StepCierre bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} />}
-      {bundle && step === 'informe' && <StepInforme bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} withEquipment={withEquipment} />}
+      {bundle && step === 'equipos' && <StepEquipos bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 'checklist' && <StepChecklist bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 'fotos' && withEquipment && <StepFotos bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 'fotos' && !withEquipment && <StepFotosSecciones bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} />}
+      {bundle && step === 'hallazgos' && <StepHallazgos bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} registerSave={register} />}
+      {bundle && step === 'trabajos' && <StepTrabajos bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} registerSave={register} />}
+      {bundle && step === 'cierre' && <StepCierre bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} registerSave={register} />}
+      {bundle && step === 'informe' && <StepInforme bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} withEquipment={withEquipment} />}
     </>
   );
 }

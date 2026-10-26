@@ -13,7 +13,7 @@ import { EquipmentDialog, type EquipmentForm } from '../../components/EquipmentD
 import { useAuth } from '../../lib/auth';
 import { useCatalogs } from '../../lib/catalogs';
 import { supabase, must } from '../../lib/supabase';
-import { addInventoryToService, currentTemplateId, equipmentLabel, loadSiteInventory, logActivity } from '../../lib/services';
+import { addInventoryToService, currentTemplateId, equipmentLabel, loadSiteInventory, logActivity, removePhotoFiles, syncPhotoStatus } from '../../lib/services';
 import { equipmentSummary } from '../../lib/texts';
 import { useAsync } from '../../lib/useAsync';
 import { useNotify } from '../../lib/toast';
@@ -35,7 +35,7 @@ const master = (f: EquipmentForm) => ({
   code: f.code!, equipment_type_id: f.equipment_type_id, capacity: f.capacity, unit: f.unit, brand: f.brand, model: f.model, serial: f.serial,
 });
 
-export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
+export function StepEquipos({ bundle, reload, patch, readOnly, goTo }: StepProps) {
   const s = useStyles();
   const cat = useCatalogs();
   const { can } = useAuth();
@@ -59,11 +59,27 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
 
   const maxPos = Math.max(0, ...bundle.equipment.map((e) => e.position));
 
+  // Al agregar o editar se usa la fila que devuelve la base en vez de recargar todo el servicio
+  // (el checklist de los equipos nuevos se carga al pasar al paso Checklist, que siempre recarga)
+  const append = (rows: ServiceEquipment[]) => patch((b) => ({ ...b, equipment: [...b.equipment, ...rows] }));
+  const afterChange = (action: string) => Promise.all([logActivity(svc.id, action), syncPhotoStatus(svc.id)]);
+
+  const [addingMissing, setAddingMissing] = useState(false);
   const addFromInventory = async (list: SiteEquipment[]) => {
-    await addInventoryToService(svc.id, list, maxPos);
-    await logActivity(svc.id, `agregó equipo${list.length > 1 ? 's' : ''} ${list.map((r) => r.code).join(', ')}`);
+    append(await addInventoryToService(svc.id, list, maxPos));
     notify(list.length > 1 ? `${list.length} equipos agregados` : `Equipo ${list[0].code} agregado`);
-    await reload();
+    await afterChange(`agregó equipo${list.length > 1 ? 's' : ''} ${list.map((r) => r.code).join(', ')}`);
+  };
+  const addMissing = async () => {
+    setAddingMissing(true);
+    try {
+      await addFromInventory(missing);
+    } catch (err: any) {
+      notify('No se pudieron agregar los equipos', 'error', err.message);
+      await reload();
+    } finally {
+      setAddingMissing(false);
+    }
   };
 
   /** Equipo nuevo: se agrega al servicio y, si corresponde, al inventario de la sede. */
@@ -75,38 +91,47 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
         .insert({ ...master(f), site_id: svc.site_id, location: f.observation, position: pos }).select('id').single()) as { id: string };
       siteEquipmentId = row.id;
     }
-    must(await supabase.from('service_equipment').insert({
+    append([must(await supabase.from('service_equipment').insert({
       ...f, service_id: svc.id, site_equipment_id: siteEquipmentId, position: maxPos + 1,
       checklist_template_id: await currentTemplateId(f.equipment_type_id),
-    }));
-    await logActivity(svc.id, `agregó el equipo ${f.code}${toInventory ? ' (nuevo en el inventario de la sede)' : ''}`);
+    }).select('*').single()) as ServiceEquipment]);
     notify(`Equipo ${f.code} agregado`, 'success', toInventory ? `También quedó registrado en el inventario de ${site?.name}.` : undefined);
-    reloadInventory();
-    await reload();
+    if (toInventory) reloadInventory();
+    await afterChange(`agregó el equipo ${f.code}${toInventory ? ' (nuevo en el inventario de la sede)' : ''}`);
   };
 
   const saveEdit = async (f: EquipmentForm, toInventory: boolean) => {
     const e = editing!;
     const tpl = f.equipment_type_id !== e.equipment_type_id ? await currentTemplateId(f.equipment_type_id) : e.checklist_template_id;
-    must(await supabase.from('service_equipment').update({ ...f, checklist_template_id: tpl }).eq('id', e.id));
+    const row = must(await supabase.from('service_equipment').update({ ...f, checklist_template_id: tpl }).eq('id', e.id).select('*').single()) as ServiceEquipment;
     // Cambio de serie, reemplazo de equipo, etc.: se corrige también en el inventario para los próximos servicios
     if (toInventory && e.site_equipment_id) must(await supabase.from('site_equipment').update(master(f)).eq('id', e.site_equipment_id));
+    patch((b) => ({ ...b, equipment: b.equipment.map((x) => (x.id === row.id ? row : x)) }));
     notify(`Equipo ${f.code} actualizado`, 'success', toInventory && e.site_equipment_id ? 'Inventario de la sede actualizado.' : undefined);
     if (toInventory) reloadInventory();
-    await reload();
   };
 
+  /** Quita el equipo de la pantalla al instante y lo borra en la nube por detrás; si falla, avisa y vuelve a lo guardado. */
   const remove = async () => {
     const e = toRemove!;
     const paths = bundle.photos.filter((p) => p.service_equipment_id === e.id).map((p) => p.storage_path);
-    must(await supabase.from('service_equipment').delete().eq('id', e.id));
-    if (paths.length) await supabase.storage.from('photos').remove(paths);
-    // Renumerar para que el informe quede 1..n
-    const rest = bundle.equipment.filter((x) => x.id !== e.id);
-    await Promise.all(rest.map((x, i) => (x.position !== i + 1 ? supabase.from('service_equipment').update({ position: i + 1 }).eq('id', x.id) : null)));
-    await logActivity(svc.id, `quitó el equipo ${e.code}`);
     setToRemove(null);
-    await reload();
+    patch((b) => ({
+      ...b,
+      equipment: b.equipment.filter((x) => x.id !== e.id),
+      results: b.results.filter((r) => r.service_equipment_id !== e.id),
+      photos: b.photos.filter((p) => p.service_equipment_id !== e.id),
+      findings: b.findings.filter((f) => f.service_equipment_id !== e.id),
+    }));
+    try {
+      // El N.º se calcula por orden al mostrar: no hace falta renumerar el resto
+      must(await supabase.from('service_equipment').delete().eq('id', e.id));
+      notify(`${e.code} quitado del servicio`);
+      await Promise.all([removePhotoFiles(paths), logActivity(svc.id, `quitó el equipo ${e.code}`), syncPhotoStatus(svc.id)]);
+    } catch (err: any) {
+      notify(`No se pudo quitar ${e.code}`, 'error', err.message);
+      await reload();
+    }
   };
 
   const counts = (e: ServiceEquipment) => ({
@@ -134,7 +159,7 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
                 : `${site?.name} tiene ${missing.length} equipos registrados en su inventario.`}
             </MessageBarBody>
             <MessageBarActions>
-              <Button size="small" onClick={() => addFromInventory(missing)}>
+              <Button size="small" onClick={addMissing} disabled={addingMissing} icon={addingMissing ? <Spinner size="tiny" /> : undefined}>
                 {bundle.equipment.length ? 'Agregar los que faltan' : `Cargar los ${missing.length} equipos`}
               </Button>
             </MessageBarActions>
@@ -146,26 +171,27 @@ export function StepEquipos({ bundle, reload, readOnly, goTo }: StepProps) {
               <TableHeaderCell style={{ width: 50 }}>N.º</TableHeaderCell>
               <TableHeaderCell>Código de equipo</TableHeaderCell>
               <TableHeaderCell>Tipo de equipo</TableHeaderCell>
-              <TableHeaderCell>Capacidad</TableHeaderCell>
-              <TableHeaderCell>Marca / Modelo</TableHeaderCell>
-              <TableHeaderCell>Serie</TableHeaderCell>
-              <TableHeaderCell>Checklist (plantilla)</TableHeaderCell>
-              <TableHeaderCell>Estado final</TableHeaderCell>
+              {/* En celular se ocultan las columnas secundarias para que Editar / Quitar queden a la vista */}
+              <TableHeaderCell className={s.wideOnly}>Capacidad</TableHeaderCell>
+              <TableHeaderCell className={s.wideOnly}>Marca / Modelo</TableHeaderCell>
+              <TableHeaderCell className={s.wideOnly}>Serie</TableHeaderCell>
+              <TableHeaderCell className={s.wideOnly}>Checklist (plantilla)</TableHeaderCell>
+              <TableHeaderCell className={s.wideOnly}>Estado final</TableHeaderCell>
               <TableHeaderCell style={{ width: 90 }} />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {bundle.equipment.map((e) => (
+            {bundle.equipment.map((e, i) => (
               <TableRow key={e.id}>
-                <TableCell>{e.position}</TableCell>
+                <TableCell>{i + 1}</TableCell>
                 <TableCell><Text weight="semibold">{e.code}</Text></TableCell>
                 <TableCell>{cat.typeName(e.equipment_type_id).toUpperCase()}</TableCell>
-                <TableCell>{equipmentLabel(e).toUpperCase()}</TableCell>
-                <TableCell>{[e.brand, e.model].filter(Boolean).join(' / ').toUpperCase()}</TableCell>
-                <TableCell>{e.serial || '—'}</TableCell>
-                <TableCell>{e.checklist_template_id ? tplName.get(e.checklist_template_id) : <Caption1>Sin plantilla</Caption1>}</TableCell>
-                <TableCell><StatusBadge status={e.final_status === 'Pendiente' ? 'En checklist' : e.final_status} /></TableCell>
-                <TableCell>
+                <TableCell className={s.wideOnly}>{equipmentLabel(e).toUpperCase()}</TableCell>
+                <TableCell className={s.wideOnly}>{[e.brand, e.model].filter(Boolean).join(' / ').toUpperCase()}</TableCell>
+                <TableCell className={s.wideOnly}>{e.serial || '—'}</TableCell>
+                <TableCell className={s.wideOnly}>{e.checklist_template_id ? tplName.get(e.checklist_template_id) : <Caption1>Sin plantilla</Caption1>}</TableCell>
+                <TableCell className={s.wideOnly}><StatusBadge status={e.final_status === 'Pendiente' ? 'En checklist' : e.final_status} /></TableCell>
+                <TableCell style={{ whiteSpace: 'nowrap' }}>
                   {!readOnly && (
                     <>
                       <Button size="small" appearance="subtle" icon={<Edit20Regular />} aria-label="Editar" onClick={() => setEditing(e)} />

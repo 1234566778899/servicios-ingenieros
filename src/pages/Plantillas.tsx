@@ -5,7 +5,7 @@ import {
   Option, Spinner, Tab, TabList, Text, Textarea, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Add20Regular, MoreHorizontal20Regular } from '@fluentui/react-icons';
-import { PageHeader, StatusBadge } from '../components/common';
+import { AsyncButton, PageHeader, StatusBadge } from '../components/common';
 import { DateInput } from '../components/DateInput';
 import { useAuth } from '../lib/auth';
 import { optionNames, useCatalogs } from '../lib/catalogs';
@@ -26,7 +26,7 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, padding: '12px', backgroundColor: '#fff',
     display: 'flex', flexDirection: 'column', gap: '6px', minHeight: '130px',
   },
-  form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
   span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
 });
 
@@ -133,7 +133,7 @@ export function Plantillas() {
                     </Dropdown>
                   </Field>
                   <Field label="Secciones incluidas" className={s.span2}>
-                    <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                    <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
                       {SECTIONS.map(([k, l]) => (
                         <Checkbox key={k} label={l} checked={draft.sections.includes(k)}
                           onChange={(_, d) => setDraft({ ...draft, sections: d.checked ? SECTIONS.map(([x]) => x).filter((x) => x === k || draft.sections.includes(x)) : draft.sections.filter((x) => x !== k) })} />
@@ -146,7 +146,7 @@ export function Plantillas() {
             )}
             <DialogActions>
               <Button onClick={() => setDraft(null)}>Cancelar</Button>
-              <Button appearance="primary" disabled={!draft?.name?.trim() || !draft.code?.trim()} onClick={save}>Guardar</Button>
+              <AsyncButton appearance="primary" disabled={!draft?.name?.trim() || !draft.code?.trim()} onClick={save}>Guardar</AsyncButton>
             </DialogActions>
           </DialogBody>
         </DialogSurface>

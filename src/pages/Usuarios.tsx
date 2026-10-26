@@ -18,7 +18,7 @@ import type { Profile } from '../lib/types';
 const useStyles = makeStyles({
   kpis: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' } },
   filters: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '12px' },
-  form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
   span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
   name: { display: 'flex', alignItems: 'center', gap: '8px' },
 });

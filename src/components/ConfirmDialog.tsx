@@ -2,12 +2,14 @@ import { useState, type ReactNode } from 'react';
 import {
   Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Spinner, tokens,
 } from '@fluentui/react-components';
+import { useNotify } from '../lib/toast';
 
 export function ConfirmDialog({ open, title, body, confirmLabel = 'Aceptar', danger, onConfirm, onCancel, children }: {
   open: boolean; title: ReactNode; body?: ReactNode; confirmLabel?: string; danger?: boolean;
   onConfirm: () => Promise<void> | void; onCancel: () => void; children?: ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
+  const notify = useNotify();
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onCancel()}>
       <DialogSurface style={{ maxWidth: 480 }}>
@@ -27,6 +29,9 @@ export function ConfirmDialog({ open, title, body, confirmLabel = 'Aceptar', dan
                 setBusy(true);
                 try {
                   await onConfirm();
+                } catch (e: any) {
+                  // El diálogo queda abierto para reintentar o cancelar
+                  notify('No se pudo completar la acción', 'error', e?.message ?? String(e));
                 } finally {
                   setBusy(false);
                 }

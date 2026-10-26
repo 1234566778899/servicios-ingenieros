@@ -31,9 +31,12 @@ export function StepCierre({ bundle, readOnly, goTo, registerSave }: StepProps &
   latest.current = texts;
   const saved = useRef(initial);
 
+  const clean = () => Object.fromEntries(Object.entries(latest.current).map(([k, v]) => [k, v.map((x) => x.trim()).filter(Boolean)])) as Texts;
+  const dirty = () => !readOnly && JSON.stringify(clean()) !== JSON.stringify(saved.current);
+
   const save = async () => {
     if (readOnly) return true;
-    const t = Object.fromEntries(Object.entries(latest.current).map(([k, v]) => [k, v.map((x) => x.trim()).filter(Boolean)])) as Texts;
+    const t = clean();
     if (JSON.stringify(t) === JSON.stringify(saved.current)) return true;
     const { error } = await supabase.from('services').update({
       conclusions: t.conclusions.join('\n') || null,
@@ -58,8 +61,12 @@ export function StepCierre({ bundle, readOnly, goTo, registerSave }: StepProps &
   };
 
   useEffect(() => {
-    registerSave(save);
-    return () => registerSave(null);
+    registerSave(Object.assign(save, { dirty }));
+    // Al salir del asistente (menú, búsqueda, "Cerrar") se guarda lo pendiente
+    return () => {
+      registerSave(null);
+      if (dirty()) void save();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

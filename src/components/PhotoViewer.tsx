@@ -46,7 +46,7 @@ export function PhotoViewer({ photo, photos, slots, slotOf, slotLabel, slotCount
           <DialogContent>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 8 }}>
               <Button icon={<ChevronLeft20Regular />} disabled={idx <= 0} onClick={() => go(photos[idx - 1])} aria-label="Anterior" />
-              <PhotoThumb path={photo.storage_path} alt={photo.caption ?? ''} height="52vh" fit="contain" />
+              <PhotoThumb path={photo.storage_path} alt={photo.caption ?? ''} height="52vh" fit="contain" full />
               <Button icon={<ChevronRight20Regular />} disabled={idx >= photos.length - 1} onClick={() => go(photos[idx + 1])} aria-label="Siguiente" />
             </div>
             <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginTop: 16 }}>

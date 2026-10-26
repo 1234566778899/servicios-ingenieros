@@ -24,6 +24,8 @@ export function StepTrabajos({ bundle, readOnly, goTo, registerSave }: StepProps
   // Último estado guardado: solo los textos nuevos suman como concepto
   const saved = useRef(svc.work_items);
 
+  const dirty = () => !readOnly && JSON.stringify(latest.current.map((t) => t.trim()).filter(Boolean)) !== JSON.stringify(saved.current);
+
   const save = async () => {
     if (readOnly) return true;
     const list = latest.current.map((t) => t.trim()).filter(Boolean);
@@ -42,8 +44,12 @@ export function StepTrabajos({ bundle, readOnly, goTo, registerSave }: StepProps
   };
 
   useEffect(() => {
-    registerSave(save);
-    return () => registerSave(null);
+    registerSave(Object.assign(save, { dirty }));
+    // Al salir del asistente (menú, búsqueda, "Cerrar") se guarda lo pendiente
+    return () => {
+      registerSave(null);
+      if (dirty()) void save();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -4,7 +4,7 @@ import {
   MessageBar, MessageBarBody, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, tokens,
 } from '@fluentui/react-components';
 import { Add20Regular, Save20Regular } from '@fluentui/react-icons';
-import { PageHeader, Section, Loading, ErrorBar } from '../components/common';
+import { AsyncButton, PageHeader, Section, Loading, ErrorBar } from '../components/common';
 import { useAuth } from '../lib/auth';
 import { supabase, must } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
@@ -127,7 +127,7 @@ export function Roles() {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setNewRole(null)}>Cancelar</Button>
-              <Button appearance="primary" disabled={!newRole?.name} onClick={createRole}>Crear rol</Button>
+              <AsyncButton appearance="primary" disabled={!newRole?.name} onClick={createRole}>Crear rol</AsyncButton>
             </DialogActions>
           </DialogBody>
         </DialogSurface>

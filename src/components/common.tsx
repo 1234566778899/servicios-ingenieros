@@ -4,6 +4,7 @@ import {
   Spinner, Text, Title2, makeStyles, tokens, type BadgeProps, type ButtonProps,
 } from '@fluentui/react-components';
 import { useRouter } from '../lib/router';
+import { useNotify } from '../lib/toast';
 
 const useStyles = makeStyles({
   header: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px 16px', marginBottom: '16px', flexWrap: 'wrap' },
@@ -85,6 +86,7 @@ export function AsyncButton({ onClick, loading, icon, disabled, ...props }: Pick
   onClick: () => unknown; loading?: boolean; icon?: ReactElement; disabled?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const notify = useNotify();
   const on = busy || !!loading;
   return (
     <Button {...props} icon={on ? <Spinner size="tiny" /> : icon} disabled={disabled || on}
@@ -92,6 +94,9 @@ export function AsyncButton({ onClick, loading, icon, disabled, ...props }: Pick
         setBusy(true);
         try {
           await onClick();
+        } catch (e: any) {
+          // Sin esto un fallo (p. ej. sin señal) dejaba el botón como si nada hubiera pasado
+          notify('No se pudo completar la acción', 'error', e?.message ?? String(e));
         } finally {
           setBusy(false);
         }

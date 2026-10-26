@@ -1,15 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Caption1, Dropdown, Field, Input, Link, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Option,
-  Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, tokens,
+  Button, Dropdown, Field, Input, Link, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Option,
+  Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, makeStyles,
   MessageBar, MessageBarBody, Spinner,
 } from '@fluentui/react-components';
 import {
   Add20Regular, MoreHorizontal20Regular, Search20Regular, Open20Regular, Edit20Regular, Copy20Regular,
-  DocumentArrowRight20Regular, Delete20Regular, ChevronLeft20Regular, ChevronRight20Regular, Dismiss20Regular,
+  DocumentArrowRight20Regular, Delete20Regular, Dismiss20Regular,
 } from '@fluentui/react-icons';
 import { PageHeader, Section, StatusBadge, ErrorBar } from '../components/common';
 import { DateInput } from '../components/DateInput';
+import { Pager, usePageSize } from '../components/Pager';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
@@ -21,12 +22,10 @@ import { useNotify } from '../lib/toast';
 import type { Service } from '../lib/types';
 import { duplicateService } from '../lib/services';
 
-const PAGE = 15;
 const STATUSES = ['En registro', 'Fotos pendientes', 'Informe generado'];
 
 const useStyles = makeStyles({
   filters: { display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '12px' },
-  pager: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' },
   row: { cursor: 'pointer' },
 });
 
@@ -40,6 +39,8 @@ export function Servicios() {
   const notify = useNotify();
   const initialQ = new URLSearchParams(path.split('?')[1] ?? '').get('q') ?? '';
 
+  // Lo que se escribe (typed) se aplica como filtro (q) 300 ms después de la última tecla: una consulta por búsqueda, no por letra
+  const [typed, setTyped] = useState(initialQ);
   const [q, setQ] = useState(initialQ);
   const [clientId, setClientId] = useState('');
   const [siteId, setSiteId] = useState('');
@@ -48,6 +49,7 @@ export function Servicios() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [page, setPage] = useState(0);
+  const [size, setSize] = usePageSize('servicios', 15);
   const [toDelete, setToDelete] = useState<Service | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -57,7 +59,7 @@ export function Servicios() {
       .select('*, service_equipment(count)', { count: 'exact' })
       .order('execution_date', { ascending: false })
       .order('code', { ascending: false })
-      .range(page * PAGE, page * PAGE + PAGE - 1);
+      .range(page * size, page * size + size - 1);
     if (clientId) query = query.eq('client_id', clientId);
     if (siteId) query = query.eq('site_id', siteId);
     if (type) query = query.eq('service_type', type);
@@ -76,19 +78,26 @@ export function Servicios() {
     }
     const res = await query;
     return { rows: must(res) as Row[], total: res.count ?? 0 };
-  }, [q, clientId, siteId, type, status, from, to, page, cat.clients, cat.sites]);
+  }, [q, clientId, siteId, type, status, from, to, page, size, cat.clients, cat.sites]);
 
   const sites = useMemo(() => cat.sites.filter((x) => !clientId || x.client_id === clientId), [cat.sites, clientId]);
   const total = data?.total ?? 0;
-  const pages = Math.max(1, Math.ceil(total / PAGE));
+  const pages = Math.max(1, Math.ceil(total / size));
+
+  // Si se eliminó el último servicio de la última página, retroceder a la que sí tiene filas
+  useEffect(() => {
+    if (data && page > pages - 1) setPage(pages - 1);
+  }, [data, page, pages]);
 
   const canEdit = (r: Service) =>
     can('servicios.editar_otros') ||
     (can('servicios.editar_propios') && [r.created_by, r.lead_tech_id, ...r.support_tech_ids].includes(profile!.id));
 
-  const filtered = !!(q.trim() || clientId || siteId || type || status || from || to);
+  const filtered = !!(typed.trim() || clientId || siteId || type || status || from || to);
   const clear = () => {
-    setQ(''); setClientId(''); setSiteId(''); setType(''); setStatus(''); setFrom(''); setTo(''); setPage(0);
+    // Quitar el ?q= de la búsqueda global para que no vuelva al recargar
+    if (path.includes('?')) return navigate('/servicios');
+    setTyped(''); setQ(''); setClientId(''); setSiteId(''); setType(''); setStatus(''); setFrom(''); setTo(''); setPage(0);
   };
 
   const duplicate = async (r: Service) => {
@@ -115,6 +124,12 @@ export function Servicios() {
 
   const set = <T,>(fn: (v: T) => void) => (v: T) => { fn(v); setPage(0); };
 
+  useEffect(() => {
+    if (typed === q) return;
+    const t = setTimeout(() => { setQ(typed); setPage(0); }, 300);
+    return () => clearTimeout(t);
+  }, [typed, q]);
+
   return (
     <>
       <PageHeader
@@ -128,7 +143,7 @@ export function Servicios() {
       <Section>
         <div className={s.filters}>
           <Field label="Buscar">
-            <Input contentBefore={<Search20Regular />} placeholder="Código, OT, cliente o sede…" value={q} onChange={(_, d) => set(setQ)(d.value)} style={{ width: 240 }} />
+            <Input contentBefore={<Search20Regular />} placeholder="Código, OT, cliente o sede…" value={typed} onChange={(_, d) => setTyped(d.value)} style={{ width: 240 }} />
           </Field>
           <Field label="Cliente">
             <Dropdown placeholder="Todos" selectedOptions={[clientId]} value={clientId ? cat.clientName(clientId) : ''}
@@ -220,16 +235,8 @@ export function Servicios() {
             <MessageBarBody>{filtered ? 'No se encontraron servicios con esos filtros.' : 'Aún no hay servicios registrados.'}</MessageBarBody>
           </MessageBar>
         )}
-        {total > 0 && <div className={s.pager}>
-          <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
-            {total ? `Mostrando ${page * PAGE + 1}–${Math.min(total, (page + 1) * PAGE)} de ${total} servicios` : ''}
-          </Caption1>
-          {pages > 1 && <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Button size="small" icon={<ChevronLeft20Regular />} disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="Anterior" />
-            <Text size={200}>{page + 1} / {pages}</Text>
-            <Button size="small" icon={<ChevronRight20Regular />} disabled={page + 1 >= pages} onClick={() => setPage(page + 1)} aria-label="Siguiente" />
-          </div>}
-        </div>}
+        <Pager page={page} size={size} total={total} noun="servicios" onPage={setPage}
+          onSize={(n) => { setPage(Math.floor((page * size) / n)); setSize(n); }} />
       </Section>
       <ConfirmDialog
         open={!!toDelete}

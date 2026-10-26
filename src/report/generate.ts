@@ -2,12 +2,13 @@ import { supabase, must } from '../lib/supabase';
 import { logActivity } from '../lib/services';
 import type { Report } from '../lib/types';
 import type { ReportModel } from './model';
-import { renderReportDocx } from './docx';
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 /** Genera el Word, lo sube al bucket "reports" y registra el informe en el historial. */
 export async function generateReport(serviceId: string, templateId: string, issueDate: string, model: ReportModel) {
+  // La librería de Word es pesada: se descarga solo al generar, no al abrir la app
+  const { renderReportDocx } = await import('./docx');
   const docx = await renderReportDocx(model);
 
   // Regenerar conserva el número del informe y sube la versión (v1, v2…)

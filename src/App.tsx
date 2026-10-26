@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { FluentProvider, Toaster, webLightTheme } from '@fluentui/react-components';
 import { AuthProvider, useAuth } from './lib/auth';
 import { CatalogsProvider } from './lib/catalogs';
@@ -8,16 +9,29 @@ import { Loading } from './components/common';
 import { Login } from './pages/Login';
 import { Inicio } from './pages/Inicio';
 import { Servicios } from './pages/Servicios';
-import { ServicioDetalle } from './pages/ServicioDetalle';
-import { ServicioWizard } from './pages/wizard/ServicioWizard';
-import { Equipos } from './pages/Equipos';
-import { EquipoFicha } from './pages/EquipoFicha';
-import { Historial } from './pages/Historial';
-import { Plantillas } from './pages/Plantillas';
-import { Usuarios } from './pages/Usuarios';
-import { Roles } from './pages/Roles';
-import { Catalogos } from './pages/Catalogos';
 import { NoPermitido } from './pages/NoPermitido';
+
+// Pantallas que se descargan al abrirlas por primera vez (Inicio y Servicios van en la carga inicial)
+const ServicioDetalle = lazy(() => import('./pages/ServicioDetalle').then((m) => ({ default: m.ServicioDetalle })));
+const ServicioWizard = lazy(() => import('./pages/wizard/ServicioWizard').then((m) => ({ default: m.ServicioWizard })));
+const Equipos = lazy(() => import('./pages/Equipos').then((m) => ({ default: m.Equipos })));
+const EquipoFicha = lazy(() => import('./pages/EquipoFicha').then((m) => ({ default: m.EquipoFicha })));
+const Historial = lazy(() => import('./pages/Historial').then((m) => ({ default: m.Historial })));
+const Plantillas = lazy(() => import('./pages/Plantillas').then((m) => ({ default: m.Plantillas })));
+const Usuarios = lazy(() => import('./pages/Usuarios').then((m) => ({ default: m.Usuarios })));
+const Roles = lazy(() => import('./pages/Roles').then((m) => ({ default: m.Roles })));
+const Catalogos = lazy(() => import('./pages/Catalogos').then((m) => ({ default: m.Catalogos })));
+
+// Tras publicar una versión nueva, los archivos de la anterior ya no existen: recargar para tomar la nueva
+window.addEventListener('vite:preloadError', () => {
+  // Una sola vez por minuto: si el archivo falta por otra causa no se entra en un bucle de recargas
+  const key = 'reloadedForUpdate';
+  try {
+    if (Date.now() - Number(sessionStorage.getItem(key) ?? 0) < 60_000) return;
+    sessionStorage.setItem(key, String(Date.now()));
+  } catch { /* sin almacenamiento */ }
+  window.location.reload();
+});
 
 import { TOASTER_ID } from './lib/toast';
 
@@ -27,7 +41,8 @@ function Routes() {
 
   let m: Record<string, string> | null;
   if (match('/', path)) return <Inicio />;
-  if (match('/servicios', path)) return <Servicios />;
+  // key: una nueva búsqueda desde la barra superior (/servicios?q=…) reinicia filtros y página
+  if (match('/servicios', path)) return <Servicios key={path} />;
   // Misma key en "nuevo" y "editar": al crear el servicio no se vuelve a montar el asistente
   if (match('/servicios/nuevo', path)) return can('servicios.crear') ? <ServicioWizard key="wizard" /> : <NoPermitido accion="Crear servicio" />;
   if ((m = match('/servicios/:id/editar', path))) return <ServicioWizard key="wizard" serviceId={m.id} />;
@@ -49,7 +64,9 @@ function Gate() {
   return (
     <CatalogsProvider>
       <Shell>
-        <Routes />
+        <Suspense fallback={<Loading />}>
+          <Routes />
+        </Suspense>
       </Shell>
     </CatalogsProvider>
   );

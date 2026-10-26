@@ -201,7 +201,10 @@ function equipmentBody(m: ReportModel) {
     }
   }
   if (has('fotos')) {
-    for (const [i, e] of m.equipment.entries()) {
+    // Los equipos sin ninguna foto no salen: solo serían una tabla de "—"
+    const withPhotos = m.equipment.filter((e) => e.photoCount > 0);
+    if (!withPhotos.length) body.push(h2('5. REGISTRO FOTOGRÁFICO', true), p('No se registraron fotografías de los equipos.'));
+    for (const [i, e] of withPhotos.entries()) {
       if (i === 0) body.push(h2('5. REGISTRO FOTOGRÁFICO', true));
       body.push(h3(`${e.code} · ${e.type} ${e.capacity}`, i > 0));
       body.push(new Table({

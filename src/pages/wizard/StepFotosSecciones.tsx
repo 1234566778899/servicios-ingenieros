@@ -12,7 +12,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { PhotoThumb } from '../../components/PhotoThumb';
 import { PhotoViewer } from '../../components/PhotoViewer';
 import { supabase, must } from '../../lib/supabase';
-import { compressImage, logActivity, rememberConcepts, syncPhotoStatus } from '../../lib/services';
+import { logActivity, rememberConcepts, removePhotoFiles, savePhotoOrder, settleLimited, syncPhotoStatus, uploadPhoto } from '../../lib/services';
 import { useNotify } from '../../lib/toast';
 import type { Photo, PhotoGroup } from '../../lib/types';
 import type { StepProps } from './ServicioWizard';
@@ -42,7 +42,7 @@ const DEFAULT_GROUPS = ['Antes del servicio', 'Durante el servicio', 'Después d
 const byPosition = (a: { position: number }, b: { position: number }) => a.position - b.position;
 
 /** Servicios sin equipos: el registro fotográfico se arma por secciones (antes, durante, después o las que se necesiten). */
-export function StepFotosSecciones({ bundle, reload, readOnly, goTo }: StepProps) {
+export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: StepProps) {
   const s = useStyles();
   const notify = useNotify();
   const svc = bundle.service;
@@ -75,48 +75,75 @@ export function StepFotosSecciones({ bundle, reload, readOnly, goTo }: StepProps
   const saveGroup = async (g: PhotoGroup) => {
     const d = drafts[g.id];
     if (!d) return;
-    const patch: Partial<PhotoGroup> = {};
-    if (d.title !== undefined && d.title.trim() && d.title.trim() !== g.title) patch.title = d.title.trim();
-    if (d.description !== undefined && (d.description.trim() || null) !== g.description) patch.description = d.description.trim() || null;
+    const changes: Partial<PhotoGroup> = {};
+    if (d.title !== undefined && d.title.trim() && d.title.trim() !== g.title) changes.title = d.title.trim();
+    if (d.description !== undefined && (d.description.trim() || null) !== g.description) changes.description = d.description.trim() || null;
     setDrafts(({ [g.id]: _, ...rest }) => rest);
-    if (!Object.keys(patch).length) return;
-    const { error } = await supabase.from('service_photo_groups').update(patch).eq('id', g.id);
-    if (error) return notify('No se pudo guardar la sección', 'error', error.message);
-    if (patch.description) {
-      await rememberConcepts('foto', svc.specialty, [patch.description]);
+    if (!Object.keys(changes).length) return;
+    const setGroup = (fields: Partial<PhotoGroup>) =>
+      patch((b) => ({ ...b, photoGroups: b.photoGroups.map((x) => (x.id === g.id ? { ...x, ...fields } : x)) }));
+    setGroup(changes);
+    const { error } = await supabase.from('service_photo_groups').update(changes).eq('id', g.id);
+    if (error) {
+      // Se devuelve el texto escrito al campo para no perderlo
+      setGroup({ title: g.title, description: g.description });
+      setDrafts((all) => ({ ...all, [g.id]: d }));
+      return notify('No se pudo guardar la sección', 'error', error.message);
+    }
+    if (changes.description) {
+      await rememberConcepts('foto', svc.specialty, [changes.description]);
       invalidateConcepts('foto');
     }
-    await reload();
   };
 
+  const adding = useRef(false);
   const addGroup = async () => {
     const title = newTitle.trim();
-    if (!title) return;
-    must(await supabase.from('service_photo_groups').insert({
-      service_id: svc.id, title, position: Math.max(0, ...groups.map((g) => g.position)) + 1,
-    }));
-    setNewTitle('');
-    await reload();
+    // Enter dos veces seguidas no crea la sección dos veces
+    if (!title || adding.current) return;
+    adding.current = true;
+    try {
+      const row = must(await supabase.from('service_photo_groups').insert({
+        service_id: svc.id, title, position: Math.max(0, ...groups.map((g) => g.position)) + 1,
+      }).select('*').single()) as PhotoGroup;
+      patch((b) => ({ ...b, photoGroups: [...b.photoGroups, row] }));
+      setNewTitle('');
+    } catch (e: any) {
+      notify('No se pudo agregar la sección', 'error', e.message);
+    } finally {
+      adding.current = false;
+    }
   };
 
   const moveGroup = async (i: number, d: number) => {
     const a = groups[i], b = groups[i + d];
-    await Promise.all([
-      supabase.from('service_photo_groups').update({ position: i + d + 1 }).eq('id', a.id),
-      supabase.from('service_photo_groups').update({ position: i + 1 }).eq('id', b.id),
+    patch((x) => ({
+      ...x,
+      photoGroups: x.photoGroups.map((g) => (g.id === a.id ? { ...g, position: b.position } : g.id === b.id ? { ...g, position: a.position } : g)),
+    }));
+    const res = await Promise.all([
+      supabase.from('service_photo_groups').update({ position: b.position }).eq('id', a.id),
+      supabase.from('service_photo_groups').update({ position: a.position }).eq('id', b.id),
     ]);
-    await reload();
+    const error = res.find((r) => r.error)?.error;
+    if (error) {
+      notify('No se pudo cambiar el orden', 'error', error.message);
+      await reload();
+    }
   };
 
   const removeGroup = async () => {
     const g = groupToDelete!;
     const paths = photosOf(g.id).map((p) => p.storage_path);
-    must(await supabase.from('service_photo_groups').delete().eq('id', g.id));
-    if (paths.length) await supabase.storage.from('photos').remove(paths);
-    await logActivity(svc.id, `quitó la sección de fotos “${g.title}”`);
-    await syncPhotoStatus(svc.id);
     setGroupToDelete(null);
-    await reload();
+    patch((b) => ({ ...b, photoGroups: b.photoGroups.filter((x) => x.id !== g.id), photos: b.photos.filter((p) => p.group_id !== g.id) }));
+    try {
+      must(await supabase.from('service_photo_groups').delete().eq('id', g.id));
+      await Promise.all([removePhotoFiles(paths), logActivity(svc.id, `quitó la sección de fotos “${g.title}”`), syncPhotoStatus(svc.id)]);
+    } catch (e: any) {
+      notify('No se pudo quitar la sección', 'error', e.message);
+      await reload();
+    }
   };
 
   const upload = async (groupId: string, files: File[]) => {
@@ -126,21 +153,17 @@ export function StepFotosSecciones({ bundle, reload, readOnly, goTo }: StepProps
     setUploading(groupId);
     setProgress({ done: 0, total: imgs.length });
     try {
-      const results = await Promise.allSettled(
-        imgs.map(async (file, i) => {
-          const blob = await compressImage(file);
+      const results = await settleLimited(imgs, 3, async (file, i) => {
           const path = `${svc.id}/secciones/${groupId}/${crypto.randomUUID()}.jpg`;
-          const up = await supabase.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
-          if (up.error) throw new Error(up.error.message);
+          await uploadPhoto(path, file);
           const caption = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
           const ins = await supabase.from('photos').insert({ service_id: svc.id, group_id: groupId, stage: null, position: start + i, storage_path: path, caption });
           if (ins.error) {
-            await supabase.storage.from('photos').remove([path]);
+            await removePhotoFiles([path]);
             throw new Error(ins.error.message);
           }
           setProgress((p) => ({ ...p, done: p.done + 1 }));
-        }),
-      );
+        });
       const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
       if (failed.length) notify(`${failed.length} foto(s) no se pudieron subir`, 'error', failed[0].reason?.message);
       await logActivity(svc.id, `subió ${imgs.length - failed.length} foto(s) en “${groups.find((g) => g.id === groupId)?.title}”`);
@@ -153,33 +176,38 @@ export function StepFotosSecciones({ bundle, reload, readOnly, goTo }: StepProps
     }
   };
 
-  /** Guarda el orden 1..n de una sección (solo las filas que cambian). */
-  const persistOrder = async (list: Photo[], groupId: string) => {
-    await Promise.all(list.map((p, i) => (p.position !== i + 1 || p.group_id !== groupId
-      ? supabase.from('photos').update({ position: i + 1, group_id: groupId }).eq('id', p.id)
-      : null)));
-  };
-
+  /** Mueve la foto a otra sección y/o posición: se ve al instante y se guardan solo las fotos que cambian. */
   const move = async (p: Photo, groupId: string, position: number) => {
-    if (p.group_id === groupId && p.position === position) return;
     const dest = photosOf(groupId).filter((x) => x.id !== p.id);
     dest.splice(Math.min(Math.max(position - 1, 0), dest.length), 0, p);
-    await persistOrder(dest, groupId);
-    if (p.group_id !== groupId) await persistOrder(photosOf(p.group_id!).filter((x) => x.id !== p.id), p.group_id!);
-    await reload();
+    const changes: Photo[] = dest.map((x, i) => ({ ...x, position: i + 1, group_id: groupId }));
+    if (p.group_id !== groupId) {
+      changes.push(...photosOf(p.group_id!).filter((x) => x.id !== p.id).map((x, i) => ({ ...x, position: i + 1 })));
+    }
+    const before = bundle.photos;
+    patch((b) => ({ ...b, photos: b.photos.map((x) => changes.find((c) => c.id === x.id) ?? x) }));
+    try {
+      await savePhotoOrder(before, changes);
+    } catch (e: any) {
+      notify('No se pudo guardar el orden de las fotos', 'error', e.message);
+      await reload();
+    }
   };
 
+  /** Desaparece al instante; el borrado en la nube sigue por detrás. */
   const remove = async () => {
     const p = toDelete!;
-    must(await supabase.from('photos').delete().eq('id', p.id));
-    await supabase.storage.from('photos').remove([p.storage_path]);
-    await persistOrder(photosOf(p.group_id!).filter((x) => x.id !== p.id), p.group_id!);
-    await logActivity(svc.id, 'eliminó una foto');
-    await syncPhotoStatus(svc.id);
     setToDelete(null);
     setViewer(null);
-    notify('Fotografía eliminada');
-    await reload();
+    patch((b) => ({ ...b, photos: b.photos.filter((x) => x.id !== p.id) }));
+    try {
+      must(await supabase.from('photos').delete().eq('id', p.id));
+      notify('Fotografía eliminada');
+      await Promise.all([removePhotoFiles([p.storage_path]), logActivity(svc.id, 'eliminó una foto'), syncPhotoStatus(svc.id)]);
+    } catch (e: any) {
+      notify('No se pudo eliminar la foto', 'error', e.message);
+      await reload();
+    }
   };
 
   const allPhotos = groups.flatMap((g) => photosOf(g.id));
@@ -292,9 +320,8 @@ export function StepFotosSecciones({ bundle, reload, readOnly, goTo }: StepProps
           onDelete={() => setToDelete(viewer)}
           onSave={async (caption, groupId, position) => {
             must(await supabase.from('photos').update({ caption }).eq('id', viewer.id));
-            await move(viewer, groupId, position);
-            await reload();
             setViewer(null);
+            await move({ ...viewer, caption }, groupId, position);
             notify('Cambios guardados');
           }}
         />

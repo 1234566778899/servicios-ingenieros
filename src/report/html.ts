@@ -148,7 +148,10 @@ export function renderReportHtml(m: ReportModel) {
   }
 
   if (has('fotos')) {
-    m.equipment.forEach((e, i) => {
+    // Los equipos sin ninguna foto no salen: solo serían una página con una tabla de "—"
+    const withPhotos = m.equipment.filter((e) => e.photoCount > 0);
+    if (!withPhotos.length) pages.push(page(m, '<h2>5. REGISTRO FOTOGRÁFICO</h2><p>No se registraron fotografías de los equipos.</p>'));
+    withPhotos.forEach((e, i) => {
       pages.push(page(m, `${i === 0 ? '<h2>5. REGISTRO FOTOGRÁFICO</h2>' : ''}
         <h3>${esc(e.code)} · ${esc(e.type)} ${esc(e.capacity)}</h3>
         <table class="ph">

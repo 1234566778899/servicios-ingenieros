@@ -27,6 +27,8 @@ export interface ReportModel {
     checklist: { n: number; category: string; activity: string; result: string; value: string }[];
     /** Cada etapa en filas de 3 (la última se completa con null) */
     photos: { stage: string; rows: (ReportImage | null)[][] }[];
+    /** Fotos registradas del equipo (0: no sale en el registro fotográfico) */
+    photoCount: number;
   }[];
   findings: { n: number; code: string; finding: string; cause: string; action: string; recommendation: string; priority: string }[];
   workItems: string[];
@@ -36,20 +38,55 @@ export interface ReportModel {
   observations: string[];
   recommendations: string[];
   sections: string[];
+  /** Fotos que no se pudieron descargar (saldrían como recuadro vacío en el informe) */
+  failedPhotos: number;
   baseName: string;
 }
 
-async function loadImage(path: string, caption: string): Promise<ReportImage | null> {
+type Loaded = Omit<ReportImage, 'caption'>;
+// Las fotos ya descargadas se reutilizan: cambiar la fecha o la plantilla, o recargar tras generar, vuelve a armar el modelo
+const imageCache = new Map<string, Promise<Loaded>>();
+// Pocas descargas a la vez: un servicio con 100 fotos no las pide (ni decodifica) todas juntas
+let active = 0;
+const queue: (() => void)[] = [];
+async function limited<T>(fn: () => Promise<T>): Promise<T> {
+  if (active >= 6) await new Promise<void>((res) => queue.push(res));
+  active++;
   try {
-    const bytes = await downloadBytes('photos', path);
-    const blob = new Blob([bytes as BlobPart], { type: 'image/jpeg' });
-    const bmp = await createImageBitmap(blob);
-    const dataUrl = await new Promise<string>((res) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result as string);
-      r.readAsDataURL(blob);
-    });
-    return { bytes, dataUrl, width: bmp.width, height: bmp.height, caption };
+    return await fn();
+  } finally {
+    active--;
+    queue.shift()?.();
+  }
+}
+
+async function fetchImage(path: string): Promise<Loaded> {
+  const bytes = await downloadBytes('photos', path);
+  const blob = new Blob([bytes as BlobPart], { type: 'image/jpeg' });
+  const bmp = await createImageBitmap(blob);
+  const { width, height } = bmp;
+  bmp.close();
+  const dataUrl = await new Promise<string>((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result as string);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+  return { bytes, dataUrl, width, height };
+}
+
+async function loadImage(path: string, caption: string): Promise<ReportImage | null> {
+  let hit = imageCache.get(path);
+  if (!hit) {
+    hit = limited(() => fetchImage(path));
+    imageCache.set(path, hit);
+    // Tope de memoria (~150 fotos ≈ 100 MB): se descartan las más antiguas, de otros servicios
+    while (imageCache.size > 150) imageCache.delete(imageCache.keys().next().value!);
+    // Un fallo (p. ej. sin señal) no queda guardado: el próximo intento vuelve a descargar
+    hit.catch(() => imageCache.delete(path));
+  }
+  try {
+    return { ...(await hit), caption };
   } catch {
     return null;
   }
@@ -70,10 +107,12 @@ export async function buildReportModel(
   const s = b.service;
   const codeOf = (id: string) => b.equipment.find((e) => e.id === id)?.code ?? '—';
   let done = 0;
+  let failedPhotos = 0;
   const total = b.photos.length;
   const withEquipment = usesEquipment(b, names.hasEquipment);
   const image = async (p: { storage_path: string; caption: string | null }) => {
     const img = await loadImage(p.storage_path, p.caption ?? '');
+    if (!img) failedPhotos++;
     onProgress?.(++done, total);
     return img;
   };
@@ -88,9 +127,10 @@ export async function buildReportModel(
   };
 
   const equipment = await Promise.all(
-    b.equipment.map(async (e) => {
+    b.equipment.map(async (e, i) => {
       const items = e.checklist_template_id ? b.items[e.checklist_template_id] ?? [] : [];
       const res = b.results.filter((r) => r.service_equipment_id === e.id);
+      const photoCount = b.photos.filter((x) => x.service_equipment_id === e.id).length;
       const photos = await Promise.all(
         STAGES.map(async (st) => {
           const list = b.photos.filter((x) => x.service_equipment_id === e.id && x.stage === st.id).sort((x, y) => x.position - y.position);
@@ -98,7 +138,9 @@ export async function buildReportModel(
         }),
       );
       return {
-        n: e.position,
+        photoCount,
+        // Por orden y no por la posición guardada: al quitar equipos quedan huecos (1, 2, 4…)
+        n: i + 1,
         code: e.code ?? '—',
         type: names.typeName(e.equipment_type_id).toUpperCase(),
         capacity: equipmentLabel(e).toUpperCase(),
@@ -168,6 +210,7 @@ export async function buildReportModel(
     observations: splitLines(s.observations),
     recommendations,
     sections: tpl.sections,
+    failedPhotos,
     baseName: `INFORME ${shortType} - ${(site?.name ?? '').toUpperCase()} - ${dateTag}`.replace(/[\\/:*?"<>|]/g, ''),
   };
 }

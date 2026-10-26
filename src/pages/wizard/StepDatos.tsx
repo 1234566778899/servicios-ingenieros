@@ -21,7 +21,11 @@ import type { SaveHandler, StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
-  form: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' }, '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  form: {
+    display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px 16px',
+    '@media (max-width: 1000px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }, '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+    '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 },
+  },
   span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
   span3: { gridColumn: 'span 3', '@media (max-width: 1000px)': { gridColumn: 'span 2' }, '@media (max-width: 600px)': { gridColumn: 'auto' } },
   col: { display: 'flex', flexDirection: 'column', gap: '16px' },
@@ -159,6 +163,12 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
   const latest = useRef({ form, svc });
   latest.current = { form, svc };
 
+  // Solo un servicio ya creado: uno nuevo sin guardar se descarta al salir (no se crea solo)
+  const dirty = () => {
+    const { form: f, svc: current } = latest.current;
+    return !readOnly && !!current && FIELDS.some((k) => !same(f[k], current[k]));
+  };
+
   const save = async (): Promise<boolean> => {
     if (readOnly) return true;
     const { form: f, svc: current } = latest.current;
@@ -202,8 +212,12 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
   };
 
   useEffect(() => {
-    registerSave(save);
-    return () => registerSave(null);
+    registerSave(Object.assign(save, { dirty }));
+    // Al salir del asistente (menú, búsqueda, "Cerrar") se guarda lo pendiente
+    return () => {
+      registerSave(null);
+      if (dirty()) void save();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

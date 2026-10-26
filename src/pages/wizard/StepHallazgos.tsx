@@ -21,7 +21,7 @@ const useStyles = makeStyles({
   pre: { whiteSpace: 'pre-wrap', padding: '10px 12px', backgroundColor: tokens.colorNeutralBackground3, borderRadius: tokens.borderRadiusMedium, minHeight: '80px' },
 });
 
-export function StepHallazgos({ bundle, reload, readOnly, goTo, registerSave }: StepProps & { registerSave: (h: SaveHandler | null) => void }) {
+export function StepHallazgos({ bundle, reload, patch, readOnly, goTo, registerSave }: StepProps & { registerSave: (h: SaveHandler | null) => void }) {
   const s = useStyles();
   const notify = useNotify();
   const svc = bundle.service;
@@ -45,6 +45,8 @@ export function StepHallazgos({ bundle, reload, readOnly, goTo, registerSave }: 
   latest.current = { shownC, shownR, manual };
   const saved = useRef({ c: svc.conclusions ?? '', r: svc.recommendations ?? '' });
 
+  const dirty = () => !readOnly && (saved.current.c !== latest.current.shownC || saved.current.r !== latest.current.shownR);
+
   const save = async () => {
     if (readOnly) return true;
     const { shownC: c, shownR: r, manual: m } = latest.current;
@@ -67,16 +69,26 @@ export function StepHallazgos({ bundle, reload, readOnly, goTo, registerSave }: 
   };
 
   useEffect(() => {
-    registerSave(save);
-    return () => registerSave(null);
+    registerSave(Object.assign(save, { dirty }));
+    // Al salir del asistente (menú, búsqueda, "Cerrar") se guarda lo pendiente
+    return () => {
+      registerSave(null);
+      if (dirty()) void save();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const remove = async () => {
-    must(await supabase.from('findings').delete().eq('id', toDelete!.id));
-    await logActivity(svc.id, `quitó el hallazgo “${toDelete!.finding}”`);
+    const f = toDelete!;
     setToDelete(null);
-    await reload();
+    patch((b) => ({ ...b, findings: b.findings.filter((x) => x.id !== f.id) }));
+    try {
+      must(await supabase.from('findings').delete().eq('id', f.id));
+      await logActivity(svc.id, `quitó el hallazgo “${f.finding}”`);
+    } catch (e: any) {
+      notify('No se pudo quitar el hallazgo', 'error', e.message);
+      await reload();
+    }
   };
 
   const ncPending = bundle.results.filter(

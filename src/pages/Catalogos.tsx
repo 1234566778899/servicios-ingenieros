@@ -9,12 +9,13 @@ import {
   Add20Regular, ArrowDown16Regular, ArrowDown20Regular, ArrowUp16Regular, ArrowUp20Regular, Copy20Regular, Delete16Regular,
   Delete20Regular, Edit20Regular, History20Regular, MoreHorizontal20Regular, Search20Regular,
 } from '@fluentui/react-icons';
-import { PageHeader, Section, StatusBadge, ErrorBar } from '../components/common';
+import { AsyncButton, PageHeader, Section, StatusBadge, ErrorBar } from '../components/common';
 import { EquipmentRail } from '../components/EquipmentRail';
 import { ConfirmDialog } from '../components/ConfirmDialog';
+import { Pager, usePageSize } from '../components/Pager';
 import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
-import { supabase, must } from '../lib/supabase';
+import { supabase, must, fetchAll } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
 import { fmtDateTime } from '../lib/format';
 import { useMediaQuery } from '../lib/media';
@@ -26,7 +27,7 @@ const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' },
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', gap: '12px' },
-  form: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
   span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
   filters: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '12px', flexWrap: 'wrap' },
   // Columnas secundarias que se ocultan en celular (y su reemplazo compacto)
@@ -95,6 +96,8 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
   const [newType, setNewType] = useState<{ name: string; unit: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [viewVersion, setViewVersion] = useState<string | null>(null);
+  // Cambio de tipo o de versión pendiente de confirmar porque hay ediciones sin guardar
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
 
   useEffect(() => { if (!typeId && cat.equipmentTypes[0]) setTypeId(cat.equipmentTypes[0].id); }, [cat.equipmentTypes, typeId]);
 
@@ -125,19 +128,29 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
   const set = (i: number, patch: Partial<ItemDraft>) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const move = (i: number, d: number) => setItems((xs) => { const n = [...xs]; [n[i], n[i + d]] = [n[i + d], n[i]]; return n.map((x, k) => ({ ...x, position: k + 1 })); });
 
+  /** Si hay ediciones sin guardar, pide confirmar antes de cambiar de tipo o de versión. */
+  const guard = (go: () => void) => (dirty ? setLeaving(() => go) : go());
+
   /** Guardar crea una versión nueva: los servicios ya registrados conservan la suya. */
   const saveVersion = async () => {
     if (items.some((i) => !i.category.trim() || !i.activity.trim())) return notify('Completa categoría y actividad en todas las filas', 'warning');
     setSaving(true);
     try {
       const version = Math.max(0, ...versions.map((v) => v.version)) + 1;
-      const tpl = must(await supabase.from('checklist_templates').insert({ equipment_type_id: typeId, version, is_current: true }).select('id').single()) as { id: string };
+      // Se crea sin marcar como vigente y se completa antes de activarla: si algo falla a mitad,
+      // los servicios nuevos siguen usando la versión anterior en vez de una plantilla vacía
+      const tpl = must(await supabase.from('checklist_templates').insert({ equipment_type_id: typeId, version, is_current: false }).select('id').single()) as { id: string };
       if (items.length) {
-        must(await supabase.from('checklist_template_items').insert(items.map((i, k) => ({
+        const { error } = await supabase.from('checklist_template_items').insert(items.map((i, k) => ({
           template_id: tpl.id, position: k + 1, category: i.category.trim(), activity: i.activity.trim(),
           response_type: i.response_type, value_unit: i.response_type === 'cn_value' ? i.value_unit || null : null, required: i.required,
-        }))));
+        })));
+        if (error) {
+          await supabase.from('checklist_templates').delete().eq('id', tpl.id);
+          throw new Error(error.message);
+        }
       }
+      must(await supabase.from('checklist_templates').update({ is_current: true }).eq('id', tpl.id));
       must(await supabase.from('checklist_templates').update({ is_current: false }).eq('equipment_type_id', typeId).neq('id', tpl.id));
       notify(`Versión ${version} guardada`);
       setViewVersion(null);
@@ -151,7 +164,9 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
 
   const createType = async () => {
     if (!newType?.name.trim()) return;
-    const { data: t, error } = await supabase.from('equipment_types').insert({ name: newType.name.trim(), default_unit: newType.unit || null }).select('id').single();
+    const name = newType.name.trim();
+    if (cat.equipmentTypes.some((t) => t.name.toLowerCase() === name.toLowerCase())) return notify(`Ya existe el tipo “${name}”`, 'warning');
+    const { data: t, error } = await supabase.from('equipment_types').insert({ name, default_unit: newType.unit || null }).select('id').single();
     if (error) return notify('No se pudo crear', 'error', error.message);
     setNewType(null);
     await cat.reload();
@@ -167,7 +182,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
         actions={admin && <Button size="small" icon={<Add20Regular />} aria-label="Nuevo tipo de equipo" onClick={() => setNewType({ name: '', unit: '' })} />}>
         <Input size="small" contentBefore={<Search20Regular />} placeholder="Buscar tipo de equipo…" value={q} onChange={(_, d) => setQ(d.value)} style={{ width: '100%', marginBottom: 8 }} />
         {cat.loading ? <Spinner size="small" style={{ padding: 16 }} /> : (
-          <EquipmentRail equipment={typeRail} selected={typeId} onSelect={(id) => { setTypeId(id); setViewVersion(null); }} sub={() => null}
+          <EquipmentRail equipment={typeRail} selected={typeId} onSelect={(id) => guard(() => { setTypeId(id); setViewVersion(null); })} sub={() => null}
             right={(e) => {
               const v = (data ?? []).find((t) => t.equipment_type_id === e.id && t.is_current);
               return <Caption1>{v ? `${v.checklist_template_items[0]?.count ?? 0} act. · v${v.version}` : 'Sin plantilla'}</Caption1>;
@@ -190,7 +205,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
                 <MenuPopover>
                   <MenuList>
                     {versions.map((v) => (
-                      <MenuItem key={v.id} onClick={() => setViewVersion(v.id)}>
+                      <MenuItem key={v.id} onClick={() => guard(() => setViewVersion(v.id))}>
                         Versión {v.version}{v.is_current ? ' · vigente' : ''} · {v.checklist_template_items[0]?.count ?? 0} actividades
                       </MenuItem>
                     ))}
@@ -199,7 +214,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
               </Menu>
             )}
             {admin && shown && !shown.is_current && (
-              <Button icon={<Copy20Regular />} onClick={() => setViewVersion(current?.id ?? null)}>Volver a la vigente</Button>
+              <Button icon={<Copy20Regular />} onClick={() => guard(() => setViewVersion(current?.id ?? null))}>Volver a la vigente</Button>
             )}
             {editable && (
               <>
@@ -283,11 +298,14 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setNewType(null)}>Cancelar</Button>
-              <Button appearance="primary" disabled={!newType?.name.trim()} onClick={createType}>Crear</Button>
+              <AsyncButton appearance="primary" disabled={!newType?.name.trim()} onClick={createType}>Crear</AsyncButton>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
       </Dialog>
+      <ConfirmDialog open={!!leaving} title="¿Descartar los cambios?" danger confirmLabel="Descartar"
+        body="Hay cambios en esta plantilla que no se guardaron como versión nueva. Si continúas se perderán."
+        onConfirm={() => { const go = leaving!; setLeaving(null); go(); }} onCancel={() => setLeaving(null)} />
     </div>
   );
 }
@@ -303,20 +321,26 @@ function FindingsCatalog({ admin }: { admin: boolean }) {
   const [type, setType] = useState('');
   const [draft, setDraft] = useState<Partial<CatalogFinding> | null>(null);
   const [toDelete, setToDelete] = useState<CatalogFinding | null>(null);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = usePageSize('hallazgos', 25);
 
   const { data, error, loading, reload } = useAsync(async () => {
+    // Los usos se cuentan sobre todos los hallazgos registrados: con un conteo incompleto se ofrecería "Quitar" en uno en uso
     const [list, uses] = await Promise.all([
-      supabase.from('findings_catalog').select('*').order('code'),
-      supabase.from('findings').select('catalog_id'),
+      fetchAll<CatalogFinding>((a, b) => supabase.from('findings_catalog').select('*').order('code').order('id').range(a, b)),
+      fetchAll<{ catalog_id: string }>((a, b) => supabase.from('findings').select('catalog_id').not('catalog_id', 'is', null).order('id').range(a, b)),
     ]);
     const count = new Map<string, number>();
-    for (const u of uses.data ?? []) if (u.catalog_id) count.set(u.catalog_id, (count.get(u.catalog_id) ?? 0) + 1);
-    return { list: must(list) as CatalogFinding[], count };
+    for (const u of uses) count.set(u.catalog_id, (count.get(u.catalog_id) ?? 0) + 1);
+    return { list, count };
   }, []);
 
   const rows = useMemo(() => (data?.list ?? []).filter((f) =>
     (!prio || f.priority === prio) && (!type || f.equipment_type_id === type) &&
     (!q || `${f.code} ${f.finding} ${f.probable_cause} ${f.category}`.toLowerCase().includes(q.toLowerCase()))), [data, q, prio, type]);
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const pg = Math.min(page, pages - 1);
+  const set = <T,>(fn: (v: T) => void) => (v: T) => { fn(v); setPage(0); };
 
   const save = async () => {
     if (!draft?.finding || !draft.code) return notify('Completa código y hallazgo', 'warning');
@@ -335,15 +359,15 @@ function FindingsCatalog({ admin }: { admin: boolean }) {
       actions={admin && <Button appearance="primary" icon={<Add20Regular />} onClick={() => setDraft({ code: nextCode(), priority: 'Media' })}>Nuevo hallazgo</Button>}>
       <ErrorBar error={error} />
       <div className={s.filters}>
-        <Field label="Buscar"><Input contentBefore={<Search20Regular />} placeholder="Hallazgo o causa…" value={q} onChange={(_, d) => setQ(d.value)} style={{ width: 240 }} /></Field>
+        <Field label="Buscar"><Input contentBefore={<Search20Regular />} placeholder="Hallazgo o causa…" value={q} onChange={(_, d) => set(setQ)(d.value)} style={{ width: 240 }} /></Field>
         <Field label="Tipo de equipo">
-          <Dropdown value={type ? cat.typeName(type) : 'Todos'} selectedOptions={[type]} onOptionSelect={(_, d) => setType(d.optionValue ?? '')}>
+          <Dropdown value={type ? cat.typeName(type) : 'Todos'} selectedOptions={[type]} onOptionSelect={(_, d) => set(setType)(d.optionValue ?? '')}>
             <Option value="">Todos</Option>
             {cat.equipmentTypes.map((t) => <Option key={t.id} value={t.id}>{t.name}</Option>)}
           </Dropdown>
         </Field>
         <Field label="Prioridad sugerida">
-          <Dropdown value={prio || 'Todas'} selectedOptions={[prio]} onOptionSelect={(_, d) => setPrio(d.optionValue ?? '')}>
+          <Dropdown value={prio || 'Todas'} selectedOptions={[prio]} onOptionSelect={(_, d) => set(setPrio)(d.optionValue ?? '')}>
             <Option value="">Todas</Option>
             {['Alta', 'Media', 'Baja'].map((p) => <Option key={p}>{p}</Option>)}
           </Dropdown>
@@ -364,7 +388,7 @@ function FindingsCatalog({ admin }: { admin: boolean }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((f) => (
+          {rows.slice(pg * size, (pg + 1) * size).map((f) => (
             <TableRow key={f.id}>
               <TableCell>{f.code}</TableCell>
               <TableCell><Text weight="semibold">{f.finding}</Text></TableCell>
@@ -385,9 +409,9 @@ function FindingsCatalog({ admin }: { admin: boolean }) {
         </TableBody>
       </Table>
       {loading && !data && <Spinner style={{ padding: 24 }} />}
-      <Caption1 block style={{ marginTop: 12, color: tokens.colorNeutralForeground3 }}>
-        Estos textos alimentan automáticamente las secciones 6 (Hallazgos) y 7 (Conclusiones y recomendaciones) del informe.
-      </Caption1>
+      <Pager page={pg} size={size} total={rows.length} noun="hallazgos" onPage={setPage}
+        onSize={(n) => { setPage(Math.floor((pg * size) / n)); setSize(n); }}
+        note={`${data && !rows.length ? 'No hay hallazgos con esos filtros. ' : ''}Estos textos alimentan automáticamente las secciones 6 (Hallazgos) y 7 (Conclusiones y recomendaciones) del informe.`} />
 
       <Dialog open={!!draft} onOpenChange={(_, d) => !d.open && setDraft(null)}>
         <DialogSurface style={{ maxWidth: 640 }}>
@@ -419,7 +443,7 @@ function FindingsCatalog({ admin }: { admin: boolean }) {
             )}
             <DialogActions>
               <Button onClick={() => setDraft(null)}>Cancelar</Button>
-              <Button appearance="primary" disabled={!draft?.finding?.trim() || !draft.code?.trim()} onClick={save}>Guardar</Button>
+              <AsyncButton appearance="primary" disabled={!draft?.finding?.trim() || !draft.code?.trim()} onClick={save}>Guardar</AsyncButton>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
@@ -515,7 +539,7 @@ function ClientsSites({ admin }: { admin: boolean }) {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setNewClient(null)}>Cancelar</Button>
-              <Button appearance="primary" disabled={!newClient?.trim()} onClick={createClient}>Crear</Button>
+              <AsyncButton appearance="primary" disabled={!newClient?.trim()} onClick={createClient}>Crear</AsyncButton>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
@@ -537,7 +561,7 @@ function ClientsSites({ admin }: { admin: boolean }) {
             )}
             <DialogActions>
               <Button onClick={() => setSite(null)}>Cancelar</Button>
-              <Button appearance="primary" disabled={!site?.name?.trim()} onClick={saveSite}>Guardar</Button>
+              <AsyncButton appearance="primary" disabled={!site?.name?.trim()} onClick={saveSite}>Guardar</AsyncButton>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
@@ -567,7 +591,7 @@ function OptionsCatalog({ admin, table, column, title, singular, female, placeho
 
   // Usos por nombre: los servicios guardan el texto, no el id
   const { data: uses } = useAsync(async () => {
-    const rows = must(await supabase.from('services').select(column)) as Record<string, string>[];
+    const rows = await fetchAll<Record<string, string>>((a, b) => supabase.from('services').select(column).order('id').range(a, b));
     const count = new Map<string, number>();
     for (const r of rows) count.set(r[column], (count.get(r[column]) ?? 0) + 1);
     return count;
@@ -823,7 +847,7 @@ function ConceptsCatalog({ admin }: { admin: boolean }) {
             )}
             <DialogActions>
               <Button onClick={() => setDraft(null)}>Cancelar</Button>
-              <Button appearance="primary" disabled={!draft?.text?.trim()} onClick={save}>Guardar</Button>
+              <AsyncButton appearance="primary" disabled={!draft?.text?.trim()} onClick={save}>Guardar</AsyncButton>
             </DialogActions>
           </DialogBody>
         </DialogSurface>

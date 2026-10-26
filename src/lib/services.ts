@@ -1,4 +1,4 @@
-import { supabase, must } from './supabase';
+import { supabase, must, fetchAll } from './supabase';
 import type {
   ChecklistResult, ConceptKind, Finding, Photo, PhotoGroup, Report, Service, ServiceEquipment, SiteEquipment, TemplateItem,
 } from './types';
@@ -22,35 +22,34 @@ export function usesEquipment(b: Pick<ServiceBundle, 'service' | 'equipment'>, h
 
 export async function loadServiceBundle(id: string): Promise<ServiceBundle> {
   const service = must(await supabase.from('services').select('*').eq('id', id).single()) as Service;
-  const equipment = must(
-    await supabase.from('service_equipment').select('*').eq('service_id', id).order('position'),
-  ) as ServiceEquipment[];
+  // Todo en bloques: un servicio grande (p. ej. 70 equipos × 15 ítems) supera las 1000 filas por consulta
+  // y un checklist cortado saldría incompleto en el informe sin ningún error
+  const equipment = await fetchAll<ServiceEquipment>((a, b) =>
+    supabase.from('service_equipment').select('*').eq('service_id', id).order('position').order('id').range(a, b));
   const seIds = equipment.map((e) => e.id);
   const tplIds = [...new Set(equipment.map((e) => e.checklist_template_id).filter(Boolean))] as string[];
   const [items, results, photos, photoGroups, findings, reports] = await Promise.all([
     tplIds.length
-      ? supabase.from('checklist_template_items').select('*').in('template_id', tplIds).order('position')
-      : Promise.resolve({ data: [], error: null }),
-    seIds.length
-      ? supabase.from('checklist_results').select('*').in('service_equipment_id', seIds)
-      : Promise.resolve({ data: [], error: null }),
-    supabase.from('photos').select('*').eq('service_id', id).order('position'),
-    supabase.from('service_photo_groups').select('*').eq('service_id', id).order('position'),
-    supabase.from('findings').select('*').eq('service_id', id).order('position'),
-    supabase.from('reports').select('*').eq('service_id', id).order('generated_at', { ascending: false }),
+      ? fetchAll<TemplateItem>((a, b) => supabase.from('checklist_template_items').select('*').in('template_id', tplIds).order('position').order('id').range(a, b))
+      : [],
+    // Por grupos de equipos para no armar una URL enorme con cientos de ids
+    Promise.all(chunk(seIds, 100).map((ids) =>
+      fetchAll<ChecklistResult>((a, b) => supabase.from('checklist_results').select('*').in('service_equipment_id', ids).order('id').range(a, b))))
+      .then((parts) => parts.flat()),
+    fetchAll<Photo>((a, b) => supabase.from('photos').select('*').eq('service_id', id).order('position').order('id').range(a, b)),
+    fetchAll<PhotoGroup>((a, b) => supabase.from('service_photo_groups').select('*').eq('service_id', id).order('position').order('id').range(a, b)),
+    fetchAll<Finding>((a, b) => supabase.from('findings').select('*').eq('service_id', id).order('position').order('id').range(a, b)),
+    fetchAll<Report>((a, b) => supabase.from('reports').select('*').eq('service_id', id).order('generated_at', { ascending: false }).order('id').range(a, b)),
   ]);
   const byTpl: Record<string, TemplateItem[]> = {};
-  for (const it of must(items) as TemplateItem[]) (byTpl[it.template_id] ??= []).push(it);
-  return {
-    service,
-    equipment,
-    items: byTpl,
-    results: must(results) as ChecklistResult[],
-    photos: must(photos) as Photo[],
-    photoGroups: must(photoGroups) as PhotoGroup[],
-    findings: must(findings) as Finding[],
-    reports: must(reports) as Report[],
-  };
+  for (const it of items) (byTpl[it.template_id] ??= []).push(it);
+  return { service, equipment, items: byTpl, results, photos, photoGroups, findings, reports };
+}
+
+function chunk<T>(list: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
 }
 
 export async function logActivity(serviceId: string | null, action: string) {
@@ -116,17 +115,96 @@ export async function duplicateService(id: string) {
   return copy.id;
 }
 
+type Bucket = 'photos' | 'reports';
 const urlCache = new Map<string, { url: string; exp: number }>();
+// Pedidos de URL acumulados en el mismo instante: se resuelven con una sola llamada por bucket
+const pending = new Map<Bucket, Map<string, ((url: string | null) => void)[]>>();
+
+/** URL firmada (1 h) o null si el archivo no existe; agrupa las de toda una galería en una sola llamada. */
+export function signedUrlOrNull(bucket: Bucket, path: string): Promise<string | null> {
+  const hit = urlCache.get(`${bucket}/${path}`);
+  if (hit && hit.exp > Date.now()) return Promise.resolve(hit.url);
+  let queue = pending.get(bucket);
+  if (!queue) {
+    queue = new Map();
+    pending.set(bucket, queue);
+    setTimeout(() => flushSignedUrls(bucket), 0);
+  }
+  const waiting = queue.get(path) ?? [];
+  queue.set(path, waiting);
+  return new Promise((resolve) => waiting.push(resolve));
+}
+
+async function flushSignedUrls(bucket: Bucket) {
+  const queue = pending.get(bucket)!;
+  pending.delete(bucket);
+  for (const paths of chunk([...queue.keys()], 100)) {
+    const { data } = await supabase.storage.from(bucket).createSignedUrls(paths, 3600);
+    for (const path of paths) {
+      const url = data?.find((d) => d.path === path && !d.error)?.signedUrl ?? null;
+      if (url) urlCache.set(`${bucket}/${path}`, { url, exp: Date.now() + 50 * 60_000 });
+      for (const resolve of queue.get(path)!) resolve(url);
+    }
+  }
+}
 
 /** URL firmada (1 h) para mostrar un archivo privado del bucket. */
-export async function signedUrl(bucket: 'photos' | 'reports', path: string) {
-  const key = `${bucket}/${path}`;
-  const hit = urlCache.get(key);
-  if (hit && hit.exp > Date.now()) return hit.url;
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 3600);
+export async function signedUrl(bucket: Bucket, path: string) {
+  const url = await signedUrlOrNull(bucket, path);
+  if (!url) throw new Error('No se encontró el archivo.');
+  return url;
+}
+
+/** Miniatura (~320 px) que se guarda junto a cada foto para mostrar en listas sin bajar la foto completa. */
+export const thumbPath = (path: string) => `thumbs/${path}`;
+
+/** Sube la foto comprimida y su miniatura. Si la miniatura falla la foto queda igual (se muestra la completa). */
+export async function uploadPhoto(path: string, file: File) {
+  const full = await compressImage(file);
+  const up = await supabase.storage.from('photos').upload(path, full, { contentType: 'image/jpeg' });
+  if (up.error) throw new Error(up.error.message);
+  try {
+    await supabase.storage.from('photos').upload(thumbPath(path), await compressImage(full, 320, 0.7), { contentType: 'image/jpeg' });
+  } catch { /* sin miniatura */ }
+}
+
+/**
+ * Ejecuta fn sobre la lista con a lo sumo `limit` a la vez, como Promise.allSettled.
+ * Subir 30 fotos en paralelo descomprime 30 imágenes de 12 MP a la vez y agota la memoria del celular.
+ */
+export async function settleLimited<T, R>(list: T[], limit: number, fn: (x: T, i: number) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  const out: PromiseSettledResult<R>[] = new Array(list.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const i = next++;
+      try {
+        out[i] = { status: 'fulfilled', value: await fn(list[i], i) };
+      } catch (reason) {
+        out[i] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker));
+  return out;
+}
+
+/** Guarda posición y sección/etapa solo de las fotos que cambiaron respecto de `before` (normalmente 2 al mover una). */
+export async function savePhotoOrder(before: Photo[], changes: Photo[]) {
+  const old = new Map(before.map((p) => [p.id, p]));
+  const changed = changes.filter((c) => {
+    const o = old.get(c.id);
+    return !o || o.position !== c.position || o.stage !== c.stage || o.group_id !== c.group_id;
+  });
+  const res = await Promise.all(changed.map((c) =>
+    supabase.from('photos').update({ position: c.position, stage: c.stage, group_id: c.group_id }).eq('id', c.id)));
+  const error = res.find((r) => r.error)?.error;
   if (error) throw new Error(error.message);
-  urlCache.set(key, { url: data.signedUrl, exp: Date.now() + 50 * 60_000 });
-  return data.signedUrl;
+}
+
+/** Borra fotos del bucket junto con sus miniaturas. */
+export async function removePhotoFiles(paths: string[]) {
+  if (paths.length) await supabase.storage.from('photos').remove([...paths, ...paths.map(thumbPath)]);
 }
 
 export async function downloadBytes(bucket: 'photos' | 'reports', path: string) {
@@ -136,7 +214,7 @@ export async function downloadBytes(bucket: 'photos' | 'reports', path: string) 
 }
 
 /** Reduce la foto a 1600 px de lado mayor en JPEG para no subir archivos de 10 MB. */
-export async function compressImage(file: File, maxSide = 1600, quality = 0.82): Promise<Blob> {
+export async function compressImage(file: Blob, maxSide = 1600, quality = 0.82): Promise<Blob> {
   const bmp = await createImageBitmap(file);
   const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
   const canvas = new OffscreenCanvas(Math.round(bmp.width * scale), Math.round(bmp.height * scale));
@@ -174,11 +252,11 @@ export async function loadSiteInventory(siteId: string) {
 }
 
 /** Copia equipos del inventario al servicio (con su checklist vigente), al final de la lista. */
-export async function addInventoryToService(serviceId: string, list: SiteEquipment[], startPosition = 0) {
-  if (!list.length) return;
+export async function addInventoryToService(serviceId: string, list: SiteEquipment[], startPosition = 0): Promise<ServiceEquipment[]> {
+  if (!list.length) return [];
   const tpl = new Map<string, string | null>();
   for (const t of new Set(list.map((e) => e.equipment_type_id).filter(Boolean) as string[])) tpl.set(t, await currentTemplateId(t));
-  must(
+  return must(
     await supabase.from('service_equipment').insert(
       list.map((e, i) => ({
         service_id: serviceId, site_equipment_id: e.id, position: startPosition + i + 1,
@@ -186,8 +264,8 @@ export async function addInventoryToService(serviceId: string, list: SiteEquipme
         code: e.code, equipment_type_id: e.equipment_type_id, capacity: e.capacity, unit: e.unit,
         brand: e.brand, model: e.model, serial: e.serial, observation: e.location,
       })),
-    ),
-  );
+    ).select('*').order('position'),
+  ) as ServiceEquipment[];
 }
 
 /** Siguiente código libre de la sede siguiendo el formato de sus códigos: "MSMG - 20" → "MSMG - 21". */

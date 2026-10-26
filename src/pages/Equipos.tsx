@@ -1,17 +1,18 @@
 import { useMemo, useState } from 'react';
 import {
-  Badge, Button, Caption1, Dropdown, Field, Input, Link, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Option, Spinner,
+  Badge, Button, Dropdown, Field, Input, Link, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Option, Spinner,
   Switch, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, makeStyles, tokens,
 } from '@fluentui/react-components';
 import {
   Add20Regular, ArrowUndo20Regular, Dismiss20Regular, Edit20Regular, MoreHorizontal20Regular, Prohibited20Regular, Search20Regular,
 } from '@fluentui/react-icons';
 import { PageHeader, Section, StatusBadge, ErrorBar } from '../components/common';
+import { Pager, usePageSize } from '../components/Pager';
 import { EquipmentDialog, type EquipmentForm } from '../components/EquipmentDialog';
 import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
-import { supabase, must } from '../lib/supabase';
+import { supabase, must, fetchAll } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
 import { equipmentLabel } from '../lib/services';
 import { fmtDate } from '../lib/format';
@@ -22,9 +23,6 @@ const useStyles = makeStyles({
   filters: { display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: '12px' },
   wideOnly: { '@media (max-width: 700px)': { display: 'none' } },
 });
-
-// La tabla completa (cientos de equipos) se vuelve lenta: se muestran los primeros y se pide filtrar
-const MAX_ROWS = 300;
 
 type Last = Pick<ServiceEquipment, 'site_equipment_id' | 'final_status'> & { services: { execution_date: string } };
 
@@ -41,19 +39,22 @@ export function Equipos() {
   const [siteId, setSiteId] = useState('');
   const [type, setType] = useState('');
   const [inactive, setInactive] = useState(false);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = usePageSize('equipos', 25);
   const [editing, setEditing] = useState<SiteEquipment | 'new' | null>(null);
 
   const { data, error, loading, reload } = useAsync(async () => {
     const [eq, last] = await Promise.all([
-      supabase.from('site_equipment').select('*').order('site_id').order('position'),
-      supabase.from('service_equipment').select('site_equipment_id, final_status, services!inner(execution_date)').not('site_equipment_id', 'is', null),
+      fetchAll<SiteEquipment>((a, b) => supabase.from('site_equipment').select('*').order('site_id').order('position').order('id').range(a, b)),
+      fetchAll<Last>((a, b) => supabase.from('service_equipment').select('site_equipment_id, final_status, services!inner(execution_date)')
+        .not('site_equipment_id', 'is', null).order('id').range(a, b) as unknown as PromiseLike<{ data: Last[] | null; error: any }>),
     ]);
     const latest = new Map<string, Last>();
-    for (const r of (must(last) ?? []) as unknown as Last[]) {
+    for (const r of last) {
       const cur = latest.get(r.site_equipment_id!);
       if (!cur || r.services.execution_date > cur.services.execution_date) latest.set(r.site_equipment_id!, r);
     }
-    return { list: must(eq) as SiteEquipment[], latest };
+    return { list: eq, latest };
   }, []);
 
   const siteOf = (id: string) => cat.sites.find((x) => x.id === id);
@@ -69,6 +70,11 @@ export function Equipos() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data, q, clientId, siteId, type, inactive, cat.sites],
   );
+
+  // Al cambiar filtros (o al recargar tras editar) la página puede quedar fuera de rango
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const pg = Math.min(page, pages - 1);
+  const set = <T,>(fn: (v: T) => void) => (v: T) => { fn(v); setPage(0); };
 
   const filtered = !!(q || clientId || siteId || type);
   const site = siteOf(siteId);
@@ -110,29 +116,29 @@ export function Equipos() {
       <Section>
         <div className={s.filters}>
           <Field label="Buscar">
-            <Input contentBefore={<Search20Regular />} placeholder="Código, serie, marca…" value={q} onChange={(_, d) => setQ(d.value)} style={{ width: 220 }} />
+            <Input contentBefore={<Search20Regular />} placeholder="Código, serie, marca…" value={q} onChange={(_, d) => set(setQ)(d.value)} style={{ width: 220 }} />
           </Field>
           <Field label="Cliente">
-            <Dropdown value={clientId ? cat.clientName(clientId) : 'Todos'} selectedOptions={[clientId]} onOptionSelect={(_, d) => { setClientId(d.optionValue ?? ''); setSiteId(''); }} style={{ minWidth: 170 }}>
+            <Dropdown value={clientId ? cat.clientName(clientId) : 'Todos'} selectedOptions={[clientId]} onOptionSelect={(_, d) => { set(setClientId)(d.optionValue ?? ''); setSiteId(''); }} style={{ minWidth: 170 }}>
               <Option value="">Todos</Option>
               {cat.clients.map((c) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
             </Dropdown>
           </Field>
           <Field label="Sede">
-            <Dropdown value={siteId ? cat.siteName(siteId) : 'Todas'} selectedOptions={[siteId]} onOptionSelect={(_, d) => setSiteId(d.optionValue ?? '')} style={{ minWidth: 190 }}>
+            <Dropdown value={siteId ? cat.siteName(siteId) : 'Todas'} selectedOptions={[siteId]} onOptionSelect={(_, d) => set(setSiteId)(d.optionValue ?? '')} style={{ minWidth: 190 }}>
               <Option value="">Todas</Option>
               {cat.sites.filter((x) => !clientId || x.client_id === clientId).map((x) => <Option key={x.id} value={x.id}>{x.name}</Option>)}
             </Dropdown>
           </Field>
           <Field label="Tipo de equipo">
-            <Dropdown value={type ? cat.typeName(type) : 'Todos'} selectedOptions={[type]} onOptionSelect={(_, d) => setType(d.optionValue ?? '')} style={{ minWidth: 190 }}>
+            <Dropdown value={type ? cat.typeName(type) : 'Todos'} selectedOptions={[type]} onOptionSelect={(_, d) => set(setType)(d.optionValue ?? '')} style={{ minWidth: 190 }}>
               <Option value="">Todos</Option>
               {cat.equipmentTypes.map((t) => <Option key={t.id} value={t.id}>{t.name}</Option>)}
             </Dropdown>
           </Field>
-          <Switch label="Ver dados de baja" checked={inactive} onChange={(_, d) => setInactive(d.checked)} />
+          <Switch label="Ver dados de baja" checked={inactive} onChange={(_, d) => set(setInactive)(d.checked)} />
           {filtered && (
-            <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={() => { setQ(''); setClientId(''); setSiteId(''); setType(''); }}>Limpiar</Button>
+            <Button appearance="subtle" icon={<Dismiss20Regular />} onClick={() => { setQ(''); setClientId(''); setSiteId(''); setType(''); setPage(0); }}>Limpiar</Button>
           )}
         </div>
         <Table size="small">
@@ -149,7 +155,7 @@ export function Equipos() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.slice(0, MAX_ROWS).map((e) => {
+            {rows.slice(pg * size, (pg + 1) * size).map((e) => {
               const last = data?.latest.get(e.id);
               return (
                 <TableRow key={e.id} style={e.active ? undefined : { color: tokens.colorNeutralForeground4 }}>
@@ -188,11 +194,9 @@ export function Equipos() {
           </TableBody>
         </Table>
         {loading && !data && <Spinner style={{ padding: 24 }} />}
-        <Caption1 block style={{ marginTop: 12, color: tokens.colorNeutralForeground3 }}>
-          {data && !rows.length && (filtered ? 'No hay equipos con esos filtros. ' : 'Aún no hay equipos registrados. ')}
-          {rows.length > MAX_ROWS ? `Mostrando ${MAX_ROWS} de ${rows.length} equipos: filtra por cliente o sede para ver el resto. ` : rows.length > 0 && `${rows.length} equipos. `}
-          Al crear un servicio de una especialidad con equipos se cargan los equipos activos de la sede.
-        </Caption1>
+        <Pager page={pg} size={size} total={rows.length} noun="equipos" onPage={setPage}
+          onSize={(n) => { setPage(Math.floor((pg * size) / n)); setSize(n); }}
+          note={`${data && !rows.length ? (filtered ? 'No hay equipos con esos filtros. ' : 'Aún no hay equipos registrados. ') : ''}Al crear un servicio de una especialidad con equipos se cargan los equipos activos de la sede.`} />
       </Section>
       <EquipmentDialog
         open={!!editing}

@@ -10,10 +10,11 @@ import {
 } from '@fluentui/react-icons';
 import { PageHeader, Section, ErrorBar } from '../components/common';
 import { DateInput } from '../components/DateInput';
+import { Pager, usePageSize } from '../components/Pager';
 import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
-import { supabase, must } from '../lib/supabase';
+import { supabase, fetchAll } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
 import { fmtDateTime, fmtSize, today } from '../lib/format';
 import { useNotify } from '../lib/toast';
@@ -42,25 +43,32 @@ export function Historial() {
   const [siteId, setSiteId] = useState('');
   const [userId, setUserId] = useState('');
   const [open, setOpen] = useState<Row | null>(null);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = usePageSize('historial', 25);
 
-  const { data, error, loading } = useAsync(async () => {
+  // Se trae todo el periodo (en bloques): la búsqueda por texto, la paginación y el CSV trabajan sobre el listado completo
+  const { data, error, loading } = useAsync(() => fetchAll<Row>((a, b) => {
     let query = supabase
       .from('reports')
       .select('*, services!inner(id, code, client_id, site_id, service_type)')
       .order('generated_at', { ascending: false })
-      .limit(500);
+      .order('id')
+      .range(a, b);
     if (from) query = query.gte('generated_at', from);
     if (to) query = query.lte('generated_at', `${to}T23:59:59`);
     if (clientId) query = query.eq('services.client_id', clientId);
     if (siteId) query = query.eq('services.site_id', siteId);
     if (userId) query = query.eq('generated_by', userId);
-    return must(await query) as Row[];
-  }, [from, to, clientId, siteId, userId]);
+    return query as unknown as PromiseLike<{ data: Row[] | null; error: any }>;
+  }), [from, to, clientId, siteId, userId]);
 
   const rows = useMemo(
     () => (data ?? []).filter((r) => !q || `${r.number} ${r.services.code} ${r.file_base_name}`.toLowerCase().includes(q.toLowerCase())),
     [data, q],
   );
+  const pages = Math.max(1, Math.ceil(rows.length / size));
+  const pg = Math.min(page, pages - 1);
+  const set = <T,>(fn: (v: T) => void) => (v: T) => { fn(v); setPage(0); };
   const tplName = (id: string | null) => {
     const t = cat.reportTemplates.find((x) => x.id === id);
     return t ? `${t.code} · ${t.name}` : '—';
@@ -92,7 +100,7 @@ export function Historial() {
   };
 
   const filtered = !!(q || clientId || siteId || userId) || from !== defaultFrom() || to !== today();
-  const clear = () => { setQ(''); setFrom(defaultFrom()); setTo(today()); setClientId(''); setSiteId(''); setUserId(''); };
+  const clear = () => { setQ(''); setFrom(defaultFrom()); setTo(today()); setClientId(''); setSiteId(''); setUserId(''); setPage(0); };
 
   const versions = open ? (data ?? []).filter((r) => r.service_id === open.service_id && r.id !== open.id) : [];
 
@@ -111,24 +119,24 @@ export function Historial() {
       <Section>
         <div className={s.filters}>
           <Field label="Buscar">
-            <Input contentBefore={<Search20Regular />} placeholder="N.º informe, servicio…" value={q} onChange={(_, d) => setQ(d.value)} style={{ width: 220 }} />
+            <Input contentBefore={<Search20Regular />} placeholder="N.º informe, servicio…" value={q} onChange={(_, d) => set(setQ)(d.value)} style={{ width: 220 }} />
           </Field>
-          <Field label="Desde"><DateInput value={from} onChange={setFrom} style={{ width: 140 }} /></Field>
-          <Field label="Hasta"><DateInput value={to} onChange={setTo} style={{ width: 140 }} /></Field>
+          <Field label="Desde"><DateInput value={from} onChange={set(setFrom)} style={{ width: 140 }} /></Field>
+          <Field label="Hasta"><DateInput value={to} onChange={set(setTo)} style={{ width: 140 }} /></Field>
           <Field label="Cliente">
-            <Dropdown value={clientId ? cat.clientName(clientId) : 'Todos'} selectedOptions={[clientId]} onOptionSelect={(_, d) => { setClientId(d.optionValue ?? ''); setSiteId(''); }} style={{ minWidth: 150 }}>
+            <Dropdown value={clientId ? cat.clientName(clientId) : 'Todos'} selectedOptions={[clientId]} onOptionSelect={(_, d) => { set(setClientId)(d.optionValue ?? ''); setSiteId(''); }} style={{ minWidth: 150 }}>
               <Option value="">Todos</Option>
               {cat.clients.map((c) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
             </Dropdown>
           </Field>
           <Field label="Sede">
-            <Dropdown value={siteId ? cat.siteName(siteId) : 'Todas'} selectedOptions={[siteId]} onOptionSelect={(_, d) => setSiteId(d.optionValue ?? '')} style={{ minWidth: 170 }}>
+            <Dropdown value={siteId ? cat.siteName(siteId) : 'Todas'} selectedOptions={[siteId]} onOptionSelect={(_, d) => set(setSiteId)(d.optionValue ?? '')} style={{ minWidth: 170 }}>
               <Option value="">Todas</Option>
               {cat.sites.filter((x) => !clientId || x.client_id === clientId).map((x) => <Option key={x.id} value={x.id}>{x.name}</Option>)}
             </Dropdown>
           </Field>
           <Field label="Generado por">
-            <Dropdown value={userId ? cat.userName(userId) : 'Todos'} selectedOptions={[userId]} onOptionSelect={(_, d) => setUserId(d.optionValue ?? '')} style={{ minWidth: 160 }}>
+            <Dropdown value={userId ? cat.userName(userId) : 'Todos'} selectedOptions={[userId]} onOptionSelect={(_, d) => set(setUserId)(d.optionValue ?? '')} style={{ minWidth: 160 }}>
               <Option value="">Todos</Option>
               {cat.users.map((u) => <Option key={u.id} value={u.id}>{u.full_name}</Option>)}
             </Dropdown>
@@ -152,7 +160,7 @@ export function Historial() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((r) => (
+            {rows.slice(pg * size, (pg + 1) * size).map((r) => (
               <TableRow key={r.id} onDoubleClick={() => setOpen(r)}>
                 <TableCell><Link onClick={() => setOpen(r)}>{r.number}</Link>{r.version > 1 && <Caption1> v{r.version}</Caption1>}</TableCell>
                 <TableCell>{r.services.code}</TableCell>
@@ -177,6 +185,8 @@ export function Historial() {
         {data && !rows.length && (
           <Caption1 block style={{ padding: 12 }}>{filtered ? 'No hay informes con esos filtros.' : 'No hay informes generados en los últimos 60 días.'}</Caption1>
         )}
+        <Pager page={pg} size={size} total={rows.length} noun="informes" onPage={setPage}
+          onSize={(n) => { setPage(Math.floor((pg * size) / n)); setSize(n); }} />
       </Section>
 
       <OverlayDrawer position="end" size="medium" open={!!open} onOpenChange={(_, d) => !d.open && setOpen(null)}>

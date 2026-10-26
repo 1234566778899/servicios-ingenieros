@@ -8,7 +8,12 @@ import { nextEquipmentCode } from '../lib/services';
 import type { ServiceEquipment } from '../lib/types';
 
 const useStyles = makeStyles({
-  form: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' }, '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  // minmax(0, 1fr): sin esto el desplegable (ancho mínimo 250 px) ensanchaba la columna y aparecía scroll horizontal
+  form: {
+    display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px 16px',
+    '@media (max-width: 1000px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }, '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+    '& .fui-Dropdown, & .fui-Input': { minWidth: 0, width: '100%' },
+  },
   span3: { gridColumn: 'span 3', '@media (max-width: 1000px)': { gridColumn: 'span 2' }, '@media (max-width: 600px)': { gridColumn: 'auto' } },
 });
 
@@ -64,7 +69,7 @@ export function EquipmentDialog({ open, title, initial, siteId, sitePrefix, sync
 
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 720 }}>
+      <DialogSurface style={{ maxWidth: 720, width: '94vw' }}>
         <DialogBody>
           <DialogTitle>{title}</DialogTitle>
           <DialogContent>
@@ -82,7 +87,7 @@ export function EquipmentDialog({ open, title, initial, siteId, sitePrefix, sync
                   {cat.equipmentTypes.map((t) => <Option key={t.id} value={t.id}>{t.name}</Option>)}
                 </Dropdown>
               </Field>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 90px', gap: 8 }}>
                 <Field label="Capacidad"><Input value={f.capacity ?? ''} onChange={(_, d) => set('capacity', d.value)} /></Field>
                 <Field label="Unidad">
                   <Dropdown value={f.unit ?? ''} selectedOptions={[f.unit ?? '']} onOptionSelect={(_, d) => set('unit', d.optionValue!)} style={{ minWidth: 0 }}>
