@@ -1,4 +1,4 @@
-import type { ReportModel } from './model';
+import type { ReportImage, ReportModel } from './model';
 import logo from '../assets/logo.png?inline';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -52,14 +52,13 @@ const page = (m: ReportModel, body: string) => `<div class="page">${header(m)}${
 
 const cover = (m: ReportModel) => page(m, `
   <div class="cover">
-    <img src="${logo}" alt="Nórdico Ingenieros" style="width:110mm"/>
     <h1>${esc(m.coverTitle).replace(' · ', '<br/>')}</h1>
     <div class="meta">${esc(m.clientName)} · ${esc(m.site?.name ?? '')}<br/>${esc(m.executionDate)}</div>
     <div class="meta"><b>NÓRDICO INGENIEROS</b><br/>INFORME TÉCNICO · ${esc(m.serviceCode)}</div>
   </div>`);
 
 const memoria = (m: ReportModel, n: number) => `<h2>${n}. MEMORIA DESCRIPTIVA</h2>
-  <p>${esc(m.description)}</p>
+  ${m.description ? `<p>${esc(m.description)}</p>` : ''}
   <table class="kv">
     <tr><td>Cliente</td><td>${esc(m.clientName)}</td></tr>
     <tr><td>Tienda / Sede</td><td>${esc(m.site?.name ?? '')}</td></tr>
@@ -71,11 +70,17 @@ const memoria = (m: ReportModel, n: number) => `<h2>${n}. MEMORIA DESCRIPTIVA</h
     <tr><td>Técnicos de apoyo</td><td>${esc(m.supportTechs)}</td></tr>
   </table>`;
 
+/** Celda de foto: la imagen (con sus figuras) y, si lo hay, el comentario debajo */
+const photoCell = (img: ReportImage | null, empty = '') => (img
+  ? `<td><img src="${img.dataUrl}"/>${img.caption ? `<div class="cap">${esc(img.caption)}</div>` : ''}</td>`
+  : `<td class="cap">${empty}</td>`);
+
 const bullets = (xs: string[]) => `<ul>${xs.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>`;
 const doc = (m: ReportModel, pages: string[]) =>
   `<!doctype html><html lang="es"><head><meta charset="utf-8"/><title>${esc(m.baseName)}</title><style>${CSS}</style></head><body>${pages.join('')}</body></html>`;
 
-/** Servicio sin equipos: secciones numeradas según lo que tenga (como los informes de pintura, SCI, etc.). */
+/** Servicio sin equipos: secciones numeradas según lo que tenga (como los informes de pintura, SCI, etc.).
+ *  Las secciones sin datos no aparecen. */
 function renderServiceHtml(m: ReportModel) {
   const has = (k: string) => m.sections.includes(k);
   const pages: string[] = [];
@@ -85,7 +90,7 @@ function renderServiceHtml(m: ReportModel) {
   let body = '';
   if (has('memoria')) body += memoria(m, ++n);
   if (has('detalles')) {
-    body += `<h2>${++n}. DETALLES PREVIOS</h2>${bullets(m.prevDetails)}`;
+    if (m.prevDetails.length) body += `<h2>${++n}. DETALLES PREVIOS</h2>${bullets(m.prevDetails)}`;
     if (m.workItems.length) body += `<h2>${++n}. TRABAJOS REALIZADOS</h2>${bullets(m.workItems)}`;
   }
   if (body) pages.push(page(m, body));
@@ -97,9 +102,7 @@ function renderServiceHtml(m: ReportModel) {
       pages.push(page(m, `${i === 0 ? `<h2>${sec}. REGISTRO FOTOGRÁFICO</h2>` : ''}
         <h3>${sec}.${i + 1}. ${esc(g.title)}</h3>
         <table class="ph2">
-          ${g.rows.map((row) => `<tr>${row.map((img) => img
-            ? `<td><img src="${img.dataUrl}"/><div class="cap">${esc(img.caption)}</div></td>`
-            : '<td class="cap"></td>').join('')}</tr>`).join('')}
+          ${g.rows.map((row) => `<tr>${row.map((img) => photoCell(img)).join('')}</tr>`).join('')}
         </table>
         ${g.description ? `<p class="desc">${esc(g.description)}</p>` : ''}`));
     });
@@ -107,9 +110,9 @@ function renderServiceHtml(m: ReportModel) {
 
   let tail = '';
   if (has('conclusiones')) {
-    tail += `<h2>${++n}. CONCLUSIONES</h2>${m.conclusions.length ? bullets(m.conclusions) : '<p>—</p>'}`;
+    if (m.conclusions.length) tail += `<h2>${++n}. CONCLUSIONES</h2>${bullets(m.conclusions)}`;
     if (m.observations.length) tail += `<h2>${++n}. OBSERVACIONES</h2>${bullets(m.observations)}`;
-    tail += `<h2>${++n}. RECOMENDACIONES</h2>${m.recommendations.length ? bullets(m.recommendations) : '<p>—</p>'}`;
+    if (m.recommendations.length) tail += `<h2>${++n}. RECOMENDACIONES</h2>${bullets(m.recommendations)}`;
   }
   if (tail) pages.push(page(m, tail));
   return doc(m, pages);
@@ -119,18 +122,19 @@ export function renderReportHtml(m: ReportModel) {
   if (!m.withEquipment) return renderServiceHtml(m);
   const has = (k: string) => m.sections.includes(k);
   const pages: string[] = [];
+  let n = 0;
 
   if (has('portada')) pages.push(cover(m));
 
   let body = '';
-  if (has('memoria')) body += memoria(m, 1);
-  if (has('detalles')) {
-    body += `<h2>2. DETALLES PREVIOS</h2>
-      <ul>${m.prevDetails.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>
-      <p>• ${esc(m.equipmentSummary)}</p>`;
+  if (has('memoria')) body += memoria(m, ++n);
+  if (has('detalles') && (m.prevDetails.length || m.equipmentSummary)) {
+    body += `<h2>${++n}. DETALLES PREVIOS</h2>
+      ${m.prevDetails.length ? bullets(m.prevDetails) : ''}
+      ${m.equipmentSummary ? `<p>• ${esc(m.equipmentSummary)}</p>` : ''}`;
   }
-  if (has('equipos')) {
-    body += `<h2>3. LISTA DE EQUIPOS</h2>
+  if (has('equipos') && m.equipment.length) {
+    body += `<h2>${++n}. LISTA DE EQUIPOS</h2>
       <table>
         <tr><th>N.º</th><th>Código</th><th>Tipo de equipo</th><th>Capacidad</th><th>Marca / Modelo</th><th>Serie</th><th>Estado final</th><th>Observación</th></tr>
         ${m.equipment.map((e) => `<tr><td>${e.n}</td><td>${esc(e.code)}</td><td>${esc(e.type)}</td><td>${esc(e.capacity)}</td><td>${esc(e.brandModel)}</td><td>${esc(e.serial)}</td><td class="${e.status === 'No conforme' ? 'nc' : ''}">${esc(e.status)}</td><td>${esc(e.observation)}</td></tr>`).join('')}
@@ -138,43 +142,41 @@ export function renderReportHtml(m: ReportModel) {
   }
   if (body) pages.push(page(m, body));
 
-  if (has('checklist')) {
-    pages.push(page(m, `<h2>4. CHECKLIST DE MANTENIMIENTO</h2>` + m.equipment.map((e) => `
+  const checklists = m.equipment.filter((e) => e.checklist.length);
+  if (has('checklist') && checklists.length) {
+    pages.push(page(m, `<h2>${++n}. CHECKLIST DE MANTENIMIENTO</h2>` + checklists.map((e) => `
       <h3>${esc(e.code)} · ${esc(e.type)} ${esc(e.capacity)}</h3>
       <table>
         <tr><th style="width:6%">N.º</th><th style="width:18%">Categoría</th><th>Actividad</th><th style="width:16%">Resultado</th><th style="width:22%">Observación / valor</th></tr>
-        ${e.checklist.map((c) => `<tr><td>${c.n}</td><td>${esc(c.category)}</td><td>${esc(c.activity)}</td><td class="${c.result === 'No conforme' ? 'nc' : ''}">${esc(c.result)}</td><td>${esc(c.value)}</td></tr>`).join('') || '<tr><td colspan="5">Sin checklist</td></tr>'}
+        ${e.checklist.map((c) => `<tr><td>${c.n}</td><td>${esc(c.category)}</td><td>${esc(c.activity)}</td><td class="${c.result === 'No conforme' ? 'nc' : ''}">${esc(c.result)}</td><td>${esc(c.value)}</td></tr>`).join('')}
       </table>`).join('')));
   }
 
-  if (has('fotos')) {
-    // Los equipos sin ninguna foto no salen: solo serían una página con una tabla de "—"
-    const withPhotos = m.equipment.filter((e) => e.photoCount > 0);
-    if (!withPhotos.length) pages.push(page(m, '<h2>5. REGISTRO FOTOGRÁFICO</h2><p>No se registraron fotografías de los equipos.</p>'));
+  const withPhotos = m.equipment.filter((e) => e.photos.length);
+  if (has('fotos') && withPhotos.length) {
+    const sec = ++n;
     withPhotos.forEach((e, i) => {
-      pages.push(page(m, `${i === 0 ? '<h2>5. REGISTRO FOTOGRÁFICO</h2>' : ''}
+      pages.push(page(m, `${i === 0 ? `<h2>${sec}. REGISTRO FOTOGRÁFICO</h2>` : ''}
         <h3>${esc(e.code)} · ${esc(e.type)} ${esc(e.capacity)}</h3>
         <table class="ph">
           <tr><th>Etapa</th><th>Foto 1</th><th>Foto 2</th><th>Foto 3</th></tr>
-          ${e.photos.map((st) => st.rows.map((row, ri) => `<tr>${ri === 0 ? `<td rowspan="${st.rows.length}">${st.stage}</td>` : ''}${row.map((img) => img
-            ? `<td><img src="${img.dataUrl}"/><div class="cap">${esc(img.caption)}</div></td>`
-            : '<td class="cap">—</td>').join('')}</tr>`).join('')).join('')}
+          ${e.photos.map((st) => st.rows.map((row, ri) => `<tr>${ri === 0 ? `<td rowspan="${st.rows.length}">${st.stage}</td>` : ''}${row.map((img) => photoCell(img, '—')).join('')}</tr>`).join('')).join('')}
         </table>`));
     });
   }
 
   let tail = '';
-  if (has('hallazgos')) {
-    tail += `<h2>6. HALLAZGOS Y DEFICIENCIAS</h2>` + (m.findings.length ? `
+  if (has('hallazgos') && m.findings.length) {
+    tail += `<h2>${++n}. HALLAZGOS Y DEFICIENCIAS</h2>
       <table>
         <tr><th>N.º</th><th>Equipo</th><th>Hallazgo</th><th>Causa probable</th><th>Acción realizada</th><th>Recomendación</th><th>Prioridad</th></tr>
         ${m.findings.map((f) => `<tr><td>${f.n}</td><td>${esc(f.code)}</td><td>${esc(f.finding)}</td><td>${esc(f.cause)}</td><td>${esc(f.action)}</td><td>${esc(f.recommendation)}</td><td>${esc(f.priority)}</td></tr>`).join('')}
-      </table>` : '<p>No se registraron hallazgos. Todos los equipos se encuentran conformes.</p>');
+      </table>`;
   }
-  if (has('conclusiones')) {
-    tail += `<h2>7. CONCLUSIONES Y RECOMENDACIONES</h2>
-      <h3>Conclusiones</h3>${m.conclusions.map((c) => `<p>${esc(c)}</p>`).join('') || '<p>—</p>'}
-      <h3>Recomendaciones</h3>${m.recommendations.map((c) => `<p>${esc(c)}</p>`).join('') || '<p>—</p>'}`;
+  if (has('conclusiones') && (m.conclusions.length || m.recommendations.length)) {
+    tail += `<h2>${++n}. ${[m.conclusions.length && 'CONCLUSIONES', m.recommendations.length && 'RECOMENDACIONES'].filter(Boolean).join(' Y ')}</h2>
+      ${m.conclusions.length ? `<h3>Conclusiones</h3>${m.conclusions.map((c) => `<p>${esc(c)}</p>`).join('')}` : ''}
+      ${m.recommendations.length ? `<h3>Recomendaciones</h3>${m.recommendations.map((c) => `<p>${esc(c)}</p>`).join('')}` : ''}`;
   }
   if (tail) pages.push(page(m, tail));
 

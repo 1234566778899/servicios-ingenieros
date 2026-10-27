@@ -223,7 +223,7 @@ export function ServicioDetalle({ id }: { id: string }) {
               <div className={s.gallery}>
                 {groupPhotos(g.id).map((p) => (
                   <div key={p.id}>
-                    <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} />
+                    <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
                     <Caption1 block>{p.caption}</Caption1>
                   </div>
                 ))}
@@ -243,8 +243,8 @@ export function ServicioDetalle({ id }: { id: string }) {
                   .sort((a, b) => STAGES.findIndex((x) => x.id === a.stage) - STAGES.findIndex((x) => x.id === b.stage) || a.position - b.position)
                   .map((p) => (
                     <div key={p.id}>
-                      <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} />
-                      <Caption1 block>{STAGES.find((x) => x.id === p.stage)?.label} · {p.caption}</Caption1>
+                      <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
+                      <Caption1 block>{STAGES.find((x) => x.id === p.stage)?.label}{p.caption ? ` · ${p.caption}` : ''}</Caption1>
                     </div>
                   ))}
               </div>

@@ -72,7 +72,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
   const emptyGroups = bundle.photoGroups.filter((g) => !bundle.photos.some((p) => p.group_id === g.id)).length;
   const failed = model?.failedPhotos ?? 0;
   const issues = [
-    failed > 0 && `${failed} foto(s) no se pudieron descargar y saldrían en blanco (revisa la conexión y vuelve a abrir este paso)`,
+    failed > 0 && `${failed} foto(s) no se pudieron descargar y no saldrían en el informe (revisa la conexión y vuelve a abrir este paso)`,
     ...(withEquipment
     ? [
         !eqs.length && 'el servicio no tiene equipos',
@@ -100,13 +100,13 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
   ];
   const sections: [string, string, string][] = !withEquipment ? serviceSections : [
     ['portada', 'Portada', `${svc.service_type} · ${svc.specialty} · ${cat.siteName(svc.site_id)}`],
-    ['memoria', '1. Memoria descriptiva', `Fecha de ejecución ${model?.executionDate ?? ''}`],
-    ['detalles', '2. Detalles previos', `${svc.prev_details.length} detalles + resumen de equipos`],
-    ['equipos', '3. Lista de equipos', `${eqs.length} equipos`],
-    ['checklist', '4. Checklist de mantenimiento', `${activities} actividades · ${ncCount} No conforme`],
-    ['fotos', '5. Registro fotográfico', `${model?.equipment.reduce((n, e) => n + e.photos.reduce((k, st) => k + st.rows.length, 0), 0) ?? '…'} filas · ${bundle.photos.length} fotos`],
-    ['hallazgos', '6. Hallazgos y deficiencias', `${bundle.findings.length} hallazgos${highs ? ` · ${highs} prioridad Alta` : ''}`],
-    ['conclusiones', '7. Conclusiones y recomendaciones', `${model?.conclusions.length ?? 0} conclusiones · ${model?.recommendations.length ?? 0} recomendaciones`],
+    ['memoria', 'Memoria descriptiva', `Fecha de ejecución ${model?.executionDate ?? ''}`],
+    ['detalles', 'Detalles previos', `${svc.prev_details.length} detalles + resumen de equipos`],
+    ['equipos', 'Lista de equipos', `${eqs.length} equipos`],
+    ['checklist', 'Checklist de mantenimiento', `${activities} actividades · ${ncCount} No conforme`],
+    ['fotos', 'Registro fotográfico', `${model?.equipment.reduce((n, e) => n + e.photos.reduce((k, st) => k + st.rows.length, 0), 0) ?? '…'} filas · ${bundle.photos.length} fotos`],
+    ['hallazgos', 'Hallazgos y deficiencias', `${bundle.findings.length} hallazgos${highs ? ` · ${highs} prioridad Alta` : ''}`],
+    ['conclusiones', 'Conclusiones y recomendaciones', `${model?.conclusions.length ?? 0} conclusiones · ${model?.recommendations.length ?? 0} recomendaciones`],
   ];
 
   const generate = async () => {

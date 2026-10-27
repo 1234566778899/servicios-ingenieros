@@ -1,3 +1,5 @@
+import type { Annotation } from './annotations';
+
 export type Stage = 'antes' | 'durante' | 'despues';
 export type ServiceStatus = 'En registro' | 'Fotos pendientes' | 'Informe generado';
 export type Priority = 'Alta' | 'Media' | 'Baja';
@@ -60,7 +62,10 @@ export interface ChecklistResult {
 /** Foto de un equipo (con etapa) o de una sección del servicio (servicios sin equipos). */
 export interface Photo {
   id: string; service_id: string; service_equipment_id: string | null; group_id: string | null;
-  stage: Stage | null; position: number; storage_path: string; caption: string | null;
+  stage: Stage | null; position: number; storage_path: string;
+  /** Comentario que aparece debajo de la foto en el informe */
+  caption: string | null;
+  annotations: Annotation[];
 }
 export interface PhotoGroup { id: string; service_id: string; position: number; title: string; description: string | null }
 

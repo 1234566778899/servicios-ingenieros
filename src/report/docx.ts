@@ -87,7 +87,7 @@ function img(i: ReportImage, boxW = 170, boxH = 125) {
 
 function coverParagraphs(m: ReportModel) {
   return [
-    new Paragraph({ spacing: { before: 2000, after: 800 }, alignment: AlignmentType.CENTER, children: [logoRun(400)] }),
+    new Paragraph({ spacing: { before: 3600 } }),
     ...m.coverTitle.split(' · ').map((t) => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text: t, bold: true, size: 36, color: BLUE, font: 'Arial' })] })),
     new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [new TextRun({ text: `${m.clientName} · ${m.site?.name ?? ''}`, size: 22, font: 'Arial' })] }),
     p(m.executionDate, { align: AlignmentType.CENTER, size: 22 }),
@@ -103,7 +103,7 @@ function memoriaBlocks(m: ReportModel, n: number, pageBreakBefore: boolean) {
     ['Técnico responsable', m.leadTech], ['Técnicos de apoyo', m.supportTechs],
   ];
   return [
-    h2(`${n}. MEMORIA DESCRIPTIVA`, pageBreakBefore), p(m.description),
+    h2(`${n}. MEMORIA DESCRIPTIVA`, pageBreakBefore), ...(m.description ? [p(m.description)] : []),
     new Table({
       width: { size: CONTENT, type: WidthType.DXA },
       columnWidths: [32, 68].map(dxa),
@@ -112,45 +112,59 @@ function memoriaBlocks(m: ReportModel, n: number, pageBreakBefore: boolean) {
   ];
 }
 
-const bullets = (xs: string[]) => (xs.length ? xs : ['—']).map((d) => p(`•  ${d}`));
+const bullets = (xs: string[]) => xs.map((d) => p(`•  ${d}`));
 
-/** Servicio sin equipos: secciones numeradas según lo que tenga y fotos por sección (2 por fila). */
+/** Celda de foto: la imagen (con sus figuras) y, si lo hay, el comentario debajo */
+const photoCell = (im: ReportImage | null, width: number, box: [number, number], empty = '') => cell(im
+  ? [
+      new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, ...box)] }),
+      ...(im.caption ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] })] : []),
+    ]
+  : [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: empty, font: 'Arial' })] })], { width });
+
+/** Salto de página al empezar un bloque (como las páginas de la vista previa), salvo al inicio del documento. */
+function pager(body: unknown[]) {
+  let pending = false;
+  return {
+    block: () => { pending = body.length > 0; },
+    take: () => { const b = pending; pending = false; return b; },
+  };
+}
+
+/** Servicio sin equipos: secciones numeradas según lo que tenga y fotos por sección (2 por fila).
+ *  Las secciones sin datos no aparecen. */
 function serviceBody(m: ReportModel) {
   const has = (k: string) => m.sections.includes(k);
   const body: (Paragraph | Table)[] = [];
+  const pg = pager(body);
   let n = 0;
   if (has('portada')) body.push(...coverParagraphs(m));
-  if (has('memoria')) body.push(...memoriaBlocks(m, ++n, has('portada')));
+  pg.block();
+  if (has('memoria')) body.push(...memoriaBlocks(m, ++n, pg.take()));
   if (has('detalles')) {
-    body.push(h2(`${++n}. DETALLES PREVIOS`, has('portada') && !has('memoria')), ...bullets(m.prevDetails));
-    if (m.workItems.length) body.push(h2(`${++n}. TRABAJOS REALIZADOS`), ...bullets(m.workItems));
+    if (m.prevDetails.length) body.push(h2(`${++n}. DETALLES PREVIOS`, pg.take()), ...bullets(m.prevDetails));
+    if (m.workItems.length) body.push(h2(`${++n}. TRABAJOS REALIZADOS`, pg.take()), ...bullets(m.workItems));
   }
   const groups = m.photoGroups.filter((g) => g.rows.length);
   if (has('fotos') && groups.length) {
     const sec = ++n;
+    pg.block();
     groups.forEach((g, i) => {
-      if (i === 0) body.push(h2(`${sec}. REGISTRO FOTOGRÁFICO`, true));
+      if (i === 0) body.push(h2(`${sec}. REGISTRO FOTOGRÁFICO`, pg.take()));
       body.push(h3(`${sec}.${i + 1}. ${g.title}`, i > 0));
       body.push(new Table({
         width: { size: CONTENT, type: WidthType.DXA },
         columnWidths: [50, 50].map(dxa),
-        rows: g.rows.map((row) => new TableRow({
-          cantSplit: true,
-          children: row.map((im) => cell(im
-            ? [
-                new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, 290, 215)] }),
-                new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] }),
-              ]
-            : [new Paragraph({ text: '' })], { width: 50 })),
-        })),
+        rows: g.rows.map((row) => new TableRow({ cantSplit: true, children: row.map((im) => photoCell(im, 50, [290, 215])) })),
       }));
       if (g.description) body.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 120 }, children: [new TextRun({ text: g.description, bold: true, size: 19, font: 'Arial' })] }));
     });
   }
   if (has('conclusiones')) {
-    body.push(h2(`${++n}. CONCLUSIONES`, true), ...bullets(m.conclusions));
-    if (m.observations.length) body.push(h2(`${++n}. OBSERVACIONES`), ...bullets(m.observations));
-    body.push(h2(`${++n}. RECOMENDACIONES`), ...bullets(m.recommendations));
+    pg.block();
+    if (m.conclusions.length) body.push(h2(`${++n}. CONCLUSIONES`, pg.take()), ...bullets(m.conclusions));
+    if (m.observations.length) body.push(h2(`${++n}. OBSERVACIONES`, pg.take()), ...bullets(m.observations));
+    if (m.recommendations.length) body.push(h2(`${++n}. RECOMENDACIONES`, pg.take()), ...bullets(m.recommendations));
   }
   return body;
 }
@@ -174,24 +188,28 @@ export async function renderReportDocx(m: ReportModel): Promise<Uint8Array> {
 function equipmentBody(m: ReportModel) {
   const has = (k: string) => m.sections.includes(k);
   const body: (Paragraph | Table)[] = [];
+  const pg = pager(body);
+  let n = 0;
   if (has('portada')) body.push(...coverParagraphs(m));
-  const afterCover = has('portada');
+  pg.block();
 
-  if (has('memoria')) body.push(...memoriaBlocks(m, 1, afterCover));
-  if (has('detalles')) {
-    body.push(h2('2. DETALLES PREVIOS'), ...m.prevDetails.map((d) => p(`•  ${d}`)), p(`•  ${m.equipmentSummary}`));
+  if (has('memoria')) body.push(...memoriaBlocks(m, ++n, pg.take()));
+  if (has('detalles') && (m.prevDetails.length || m.equipmentSummary)) {
+    body.push(h2(`${++n}. DETALLES PREVIOS`, pg.take()), ...bullets(m.prevDetails), ...(m.equipmentSummary ? bullets([m.equipmentSummary]) : []));
   }
-  if (has('equipos')) {
-    body.push(h2('3. LISTA DE EQUIPOS'), table(
+  if (has('equipos') && m.equipment.length) {
+    body.push(h2(`${++n}. LISTA DE EQUIPOS`, pg.take()), table(
       ['N.º', 'Código', 'Tipo de equipo', 'Capacidad', 'Marca / Modelo', 'Serie', 'Estado final', 'Observación'],
       m.equipment.map((e) => [String(e.n), e.code, e.type, e.capacity, e.brandModel, e.serial, e.status, e.observation]),
       [6, 11, 18, 10, 18, 10, 12, 15],
       (r, c) => (c === 6 && m.equipment[r].status === 'No conforme' ? 'B00020' : undefined),
     ));
   }
-  if (has('checklist')) {
-    body.push(h2('4. CHECKLIST DE MANTENIMIENTO', true));
-    for (const e of m.equipment) {
+  const checklists = m.equipment.filter((e) => e.checklist.length);
+  if (has('checklist') && checklists.length) {
+    pg.block();
+    body.push(h2(`${++n}. CHECKLIST DE MANTENIMIENTO`, pg.take()));
+    for (const e of checklists) {
       body.push(h3(`${e.code} · ${e.type} ${e.capacity}`), table(
         ['N.º', 'Categoría', 'Actividad', 'Resultado', 'Observación / valor'],
         e.checklist.map((c) => [String(c.n), c.category, c.activity, c.result, c.value]),
@@ -200,12 +218,12 @@ function equipmentBody(m: ReportModel) {
       ));
     }
   }
-  if (has('fotos')) {
-    // Los equipos sin ninguna foto no salen: solo serían una tabla de "—"
-    const withPhotos = m.equipment.filter((e) => e.photoCount > 0);
-    if (!withPhotos.length) body.push(h2('5. REGISTRO FOTOGRÁFICO', true), p('No se registraron fotografías de los equipos.'));
+  const withPhotos = m.equipment.filter((e) => e.photos.length);
+  if (has('fotos') && withPhotos.length) {
+    pg.block();
+    const sec = ++n;
     for (const [i, e] of withPhotos.entries()) {
-      if (i === 0) body.push(h2('5. REGISTRO FOTOGRÁFICO', true));
+      if (i === 0) body.push(h2(`${sec}. REGISTRO FOTOGRÁFICO`, pg.take()));
       body.push(h3(`${e.code} · ${e.type} ${e.capacity}`, i > 0));
       body.push(new Table({
         width: { size: CONTENT, type: WidthType.DXA },
@@ -216,29 +234,25 @@ function equipmentBody(m: ReportModel) {
             cantSplit: true,
             children: [
               ...(ri === 0 ? [cell(st.stage, { shade: 'F3F3F3', width: 10, rowSpan: st.rows.length })] : []),
-              ...row.map((im) => cell(im
-                ? [
-                    new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im)] }),
-                    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] }),
-                  ]
-                : [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: '—', font: 'Arial' })] })], { width: 30 })),
+              ...row.map((im) => photoCell(im, 30, [170, 125], '—')),
             ],
           }))),
         ],
       }));
     }
   }
-  if (has('hallazgos')) {
-    body.push(h2('6. HALLAZGOS Y DEFICIENCIAS', true));
-    body.push(m.findings.length
-      ? table(['N.º', 'Equipo', 'Hallazgo', 'Causa probable', 'Acción realizada', 'Recomendación', 'Prioridad'],
-          m.findings.map((f) => [String(f.n), f.code, f.finding, f.cause, f.action, f.recommendation, f.priority]),
-          [5, 10, 15, 20, 20, 20, 10])
-      : p('No se registraron hallazgos. Todos los equipos se encuentran conformes.'));
+  pg.block();
+  if (has('hallazgos') && m.findings.length) {
+    body.push(h2(`${++n}. HALLAZGOS Y DEFICIENCIAS`, pg.take()), table(
+      ['N.º', 'Equipo', 'Hallazgo', 'Causa probable', 'Acción realizada', 'Recomendación', 'Prioridad'],
+      m.findings.map((f) => [String(f.n), f.code, f.finding, f.cause, f.action, f.recommendation, f.priority]),
+      [5, 10, 15, 20, 20, 20, 10]));
   }
-  if (has('conclusiones')) {
-    body.push(h2('7. CONCLUSIONES Y RECOMENDACIONES', !has('hallazgos')), h3('Conclusiones'), ...(m.conclusions.length ? m.conclusions : ['—']).map((c) => p(c)),
-      h3('Recomendaciones'), ...(m.recommendations.length ? m.recommendations : ['—']).map((c) => p(c)));
+  if (has('conclusiones') && (m.conclusions.length || m.recommendations.length)) {
+    const title = [m.conclusions.length && 'CONCLUSIONES', m.recommendations.length && 'RECOMENDACIONES'].filter(Boolean).join(' Y ');
+    body.push(h2(`${++n}. ${title}`, pg.take()));
+    if (m.conclusions.length) body.push(h3('Conclusiones'), ...m.conclusions.map((c) => p(c)));
+    if (m.recommendations.length) body.push(h3('Recomendaciones'), ...m.recommendations.map((c) => p(c)));
   }
   return body;
 }

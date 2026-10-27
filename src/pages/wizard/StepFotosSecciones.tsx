@@ -156,8 +156,7 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
       const results = await settleLimited(imgs, 3, async (file, i) => {
           const path = `${svc.id}/secciones/${groupId}/${crypto.randomUUID()}.jpg`;
           await uploadPhoto(path, file);
-          const caption = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
-          const ins = await supabase.from('photos').insert({ service_id: svc.id, group_id: groupId, stage: null, position: start + i, storage_path: path, caption });
+          const ins = await supabase.from('photos').insert({ service_id: svc.id, group_id: groupId, stage: null, position: start + i, storage_path: path });
           if (ins.error) {
             await removePhotoFiles([path]);
             throw new Error(ins.error.message);
@@ -253,15 +252,15 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
               <div className={s.tiles}>
                 {list.map((p, i) => (
                   <div key={p.id} className={s.slot}>
-                    <button className={s.thumbBtn} onClick={() => setViewer(p)} aria-label={`Ver ${p.caption ?? 'foto'}`}>
-                      <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} />
+                    <button className={s.thumbBtn} onClick={() => setViewer(p)} aria-label={`Ver foto ${i + 1}`}>
+                      <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
                     </button>
                     <div className={s.slotBar}>
                       <Tooltip content="Mover antes" relationship="label">
                         <Button size="small" appearance="subtle" icon={<ChevronLeft20Regular />} disabled={readOnly || i === 0} onClick={() => move(p, g.id, i)} />
                       </Tooltip>
                       <Caption1 truncate wrap={false} style={{ flex: 1, textAlign: 'center', minWidth: 0 }} title={p.caption ?? ''}>
-                        {i + 1}. {p.caption || 'Foto'}
+                        {i + 1}. {p.caption || 'Sin comentario'}
                       </Caption1>
                       <Tooltip content="Mover después" relationship="label">
                         <Button size="small" appearance="subtle" icon={<ChevronRight20Regular />} disabled={readOnly || i === list.length - 1} onClick={() => move(p, g.id, i + 2)} />
@@ -318,6 +317,11 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
           onNavigate={setViewer}
           onClose={() => setViewer(null)}
           onDelete={() => setToDelete(viewer)}
+          onAnnotate={async (annotations) => {
+            must(await supabase.from('photos').update({ annotations }).eq('id', viewer.id));
+            patch((b) => ({ ...b, photos: b.photos.map((x) => (x.id === viewer.id ? { ...x, annotations } : x)) }));
+            notify('Edición guardada');
+          }}
           onSave={async (caption, groupId, position) => {
             must(await supabase.from('photos').update({ caption }).eq('id', viewer.id));
             setViewer(null);
@@ -327,7 +331,7 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
         />
       )}
       <ConfirmDialog open={!!toDelete} title="¿Eliminar fotografía?" danger confirmLabel="Eliminar"
-        body={`Se eliminará “${toDelete?.caption ?? 'la foto'}”. Ya no aparecerá en el informe generado.`}
+        body={`Se eliminará “${toDelete?.caption || 'la foto'}”. Ya no aparecerá en el informe generado.`}
         onConfirm={remove} onCancel={() => setToDelete(null)} />
       <ConfirmDialog open={!!groupToDelete} title={`¿Quitar la sección “${groupToDelete?.title}”?`} danger confirmLabel="Quitar"
         body={groupToDelete && photosOf(groupToDelete.id).length

@@ -2,22 +2,28 @@ import { useState } from 'react';
 import {
   Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field, Input, Option,
 } from '@fluentui/react-components';
-import { ChevronLeft20Regular, ChevronRight20Regular, Delete20Regular, Dismiss20Regular, Save20Regular } from '@fluentui/react-icons';
+import { ChevronLeft20Regular, ChevronRight20Regular, Delete20Regular, Dismiss20Regular, ImageEdit20Regular, Save20Regular } from '@fluentui/react-icons';
 import { PhotoThumb } from './PhotoThumb';
+import { PhotoAnnotator } from './PhotoAnnotator';
+import type { Annotation } from '../lib/annotations';
 import type { Photo } from '../lib/types';
 
 /** Dónde puede ir una foto: una etapa del equipo (antes/durante/después) o una sección del servicio. */
 export interface PhotoSlot { id: string; label: string }
 
-export function PhotoViewer({ photo, photos, slots, slotOf, slotLabel, slotCount, code, readOnly, onNavigate, onClose, onDelete, onSave }: {
+export function PhotoViewer({ photo, photos, slots, slotOf, slotLabel, slotCount, code, readOnly, onNavigate, onClose, onDelete, onSave, onAnnotate }: {
   photo: Photo; photos: Photo[]; slots: PhotoSlot[]; slotOf: (p: Photo) => string;
   /** Rótulo del selector: "Etapa" o "Sección" */
   slotLabel: string;
   slotCount: (slot: string) => number; code: string; readOnly: boolean;
   onNavigate: (p: Photo) => void; onClose: () => void; onDelete: () => void;
   onSave: (caption: string, slot: string, position: number) => Promise<void>;
+  /** Guarda las figuras dibujadas sobre la foto */
+  onAnnotate: (annotations: Annotation[]) => Promise<void>;
 }) {
   const [caption, setCaption] = useState(photo.caption ?? '');
+  const [annotations, setAnnotations] = useState<Annotation[]>(photo.annotations ?? []);
+  const [editing, setEditing] = useState(false);
   const [slot, setSlot] = useState(slotOf(photo));
   const [position, setPosition] = useState(photo.position);
   const [busy, setBusy] = useState(false);
@@ -31,6 +37,7 @@ export function PhotoViewer({ photo, photos, slots, slotOf, slotLabel, slotCount
   const go = (p?: Photo) => {
     if (!p) return;
     setCaption(p.caption ?? '');
+    setAnnotations(p.annotations ?? []);
     setSlot(slotOf(p));
     setPosition(p.position);
     onNavigate(p);
@@ -46,12 +53,12 @@ export function PhotoViewer({ photo, photos, slots, slotOf, slotLabel, slotCount
           <DialogContent>
             <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 8 }}>
               <Button icon={<ChevronLeft20Regular />} disabled={idx <= 0} onClick={() => go(photos[idx - 1])} aria-label="Anterior" />
-              <PhotoThumb path={photo.storage_path} alt={photo.caption ?? ''} height="52vh" fit="contain" full />
+              <PhotoThumb path={photo.storage_path} alt={photo.caption ?? ''} height="52vh" fit="contain" full annotations={annotations} maxPx={1600} />
               <Button icon={<ChevronRight20Regular />} disabled={idx >= photos.length - 1} onClick={() => go(photos[idx + 1])} aria-label="Siguiente" />
             </div>
             <div className="r-stack-sm" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginTop: 16 }}>
-              <Field label="Pie de foto / comentario">
-                <Input value={caption} disabled={readOnly} onChange={(_, d) => setCaption(d.value)} />
+              <Field label="Comentario (va debajo de la foto en el informe)">
+                <Input value={caption} disabled={readOnly} placeholder={readOnly ? '' : 'Ej.: Limpieza de serpentín del condensador'} onChange={(_, d) => setCaption(d.value)} />
               </Field>
               <Field label={slotLabel}>
                 <Dropdown disabled={readOnly} value={slots.find((x) => x.id === slot)?.label} selectedOptions={[slot]}
@@ -71,7 +78,8 @@ export function PhotoViewer({ photo, photos, slots, slotOf, slotLabel, slotCount
             </div>
           </DialogContent>
           <DialogActions fluid>
-            {!readOnly && <Button icon={<Delete20Regular />} onClick={onDelete} style={{ marginRight: 'auto' }}>Eliminar fotografía</Button>}
+            {!readOnly && <Button icon={<Delete20Regular />} onClick={onDelete}>Eliminar fotografía</Button>}
+            {!readOnly && <Button icon={<ImageEdit20Regular />} onClick={() => setEditing(true)} style={{ marginRight: 'auto' }}>Editar imagen</Button>}
             <Button onClick={onClose}>Cancelar</Button>
             {!readOnly && (
               <Button appearance="primary" icon={<Save20Regular />} disabled={busy}
@@ -81,6 +89,10 @@ export function PhotoViewer({ photo, photos, slots, slotOf, slotLabel, slotCount
             )}
           </DialogActions>
         </DialogBody>
+        {editing && (
+          <PhotoAnnotator path={photo.storage_path} initial={annotations} onClose={() => setEditing(false)}
+            onSave={async (list) => { await onAnnotate(list); setAnnotations(list); setEditing(false); }} />
+        )}
       </DialogSurface>
     </Dialog>
   );

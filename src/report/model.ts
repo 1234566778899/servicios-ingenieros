@@ -2,8 +2,10 @@ import type { ServiceBundle } from '../lib/services';
 import { downloadBytes, equipmentLabel, splitLines, usesEquipment } from '../lib/services';
 import { equipmentSummary, conclusionsFrom, recommendationsFrom } from '../lib/texts';
 import { fmtDate } from '../lib/format';
-import { STAGES, type ReportTemplate, type Site } from '../lib/types';
+import { STAGES, type Photo, type ReportTemplate, type Site } from '../lib/types';
+import { renderAnnotated, type Annotation } from '../lib/annotations';
 
+/** caption = comentario del usuario (vacío si no escribió nada) */
 export interface ReportImage { bytes: Uint8Array; dataUrl: string; width: number; height: number; caption: string }
 
 export interface ReportModel {
@@ -25,7 +27,7 @@ export interface ReportModel {
   equipment: {
     n: number; code: string; type: string; capacity: string; brandModel: string; serial: string; status: string; observation: string;
     checklist: { n: number; category: string; activity: string; result: string; value: string }[];
-    /** Cada etapa en filas de 3 (la última se completa con null) */
+    /** Solo las etapas con fotos, en filas de 3 (la última se completa con null) */
     photos: { stage: string; rows: (ReportImage | null)[][] }[];
     /** Fotos registradas del equipo (0: no sale en el registro fotográfico) */
     photoCount: number;
@@ -75,7 +77,22 @@ async function fetchImage(path: string): Promise<Loaded> {
   return { bytes, dataUrl, width, height };
 }
 
-async function loadImage(path: string, caption: string): Promise<ReportImage | null> {
+/** Dibuja las figuras sobre una copia de la foto: la original no cambia */
+async function withAnnotations(img: Loaded, annotations: Annotation[]): Promise<Loaded> {
+  const bmp = await createImageBitmap(new Blob([img.bytes as BlobPart], { type: 'image/jpeg' }));
+  const canvas = renderAnnotated(bmp, annotations);
+  bmp.close();
+  const blob = await new Promise<Blob>((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob'))), 'image/jpeg', 0.9));
+  const dataUrl = await new Promise<string>((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result as string);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), dataUrl, width: canvas.width, height: canvas.height };
+}
+
+async function loadImage(path: string, caption: string, annotations: Annotation[]): Promise<ReportImage | null> {
   let hit = imageCache.get(path);
   if (!hit) {
     hit = limited(() => fetchImage(path));
@@ -86,7 +103,8 @@ async function loadImage(path: string, caption: string): Promise<ReportImage | n
     hit.catch(() => imageCache.delete(path));
   }
   try {
-    return { ...(await hit), caption };
+    const img = await hit;
+    return { ...(annotations.length ? await withAnnotations(img, annotations) : img), caption };
   } catch {
     return null;
   }
@@ -110,16 +128,18 @@ export async function buildReportModel(
   let failedPhotos = 0;
   const total = b.photos.length;
   const withEquipment = usesEquipment(b, names.hasEquipment);
-  const image = async (p: { storage_path: string; caption: string | null }) => {
-    const img = await loadImage(p.storage_path, p.caption ?? '');
+  const image = async (p: Photo) => {
+    const img = await loadImage(p.storage_path, p.caption?.trim() ?? '', p.annotations ?? []);
     if (!img) failedPhotos++;
     onProgress?.(++done, total);
     return img;
   };
+  /** Descarga las fotos (sin las que fallen: se avisa con failedPhotos) */
+  const images = async (list: Photo[]) => (await Promise.all(list.map(image))).filter((x): x is ReportImage => !!x);
   /** Parte la lista en filas de n, completando la última con null */
   const rowsOf = (images: (ReportImage | null)[], n: number) => {
     const rows: (ReportImage | null)[][] = [];
-    for (let i = 0; i < Math.max(images.length, 1); i += n) {
+    for (let i = 0; i < images.length; i += n) {
       const row = images.slice(i, i + n);
       rows.push([...row, ...Array(n - row.length).fill(null)]);
     }
@@ -134,9 +154,9 @@ export async function buildReportModel(
       const photos = await Promise.all(
         STAGES.map(async (st) => {
           const list = b.photos.filter((x) => x.service_equipment_id === e.id && x.stage === st.id).sort((x, y) => x.position - y.position);
-          return { stage: st.label.toUpperCase(), rows: rowsOf(await Promise.all(list.map(image)), 3) };
+          return { stage: st.label.toUpperCase(), rows: rowsOf(await images(list), 3) };
         }),
-      );
+      ).then((xs) => xs.filter((st) => st.rows.length));
       return {
         photoCount,
         // Por orden y no por la posición guardada: al quitar equipos quedan huecos (1, 2, 4…)
@@ -160,7 +180,7 @@ export async function buildReportModel(
   const photoGroups = await Promise.all(
     [...b.photoGroups].sort((x, y) => x.position - y.position).map(async (g) => {
       const list = b.photos.filter((p) => p.group_id === g.id).sort((x, y) => x.position - y.position);
-      return { title: g.title.toUpperCase(), description: g.description ?? '', rows: list.length ? rowsOf(await Promise.all(list.map(image)), 2) : [] };
+      return { title: g.title.toUpperCase(), description: g.description ?? '', rows: rowsOf(await images(list), 2) };
     }),
   );
 
@@ -180,6 +200,9 @@ export async function buildReportModel(
   const site = names.site;
   const shortType = s.service_type.toUpperCase();
   const dateTag = fmtDate(s.execution_date).replaceAll('/', '-');
+  // El nombre del archivo es el título de la portada (sin caracteres que Windows no admite)
+  const title = (s.cover_title ?? '').replaceAll(' · ', ' - ').replace(/\s+/g, ' ').trim()
+    || `INFORME ${shortType} - ${(site?.name ?? '').toUpperCase()} - ${dateTag}`;
 
   return {
     withEquipment,
@@ -211,6 +234,6 @@ export async function buildReportModel(
     recommendations,
     sections: tpl.sections,
     failedPhotos,
-    baseName: `INFORME ${shortType} - ${(site?.name ?? '').toUpperCase()} - ${dateTag}`.replace(/[\\/:*?"<>|]/g, ''),
+    baseName: title.replace(/[\\/:*?"<>|]/g, '').replace(/[. ]+$/, '').slice(0, 180),
   };
 }
