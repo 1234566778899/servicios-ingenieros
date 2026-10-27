@@ -162,9 +162,11 @@ export function hitTest(hits: HitArea[], px: number, py: number, tolerance: numb
   return null;
 }
 
-/** Foto con sus anotaciones, reducida a maxPx como máximo, en un lienzo nuevo. */
-export function renderAnnotated(img: CanvasImageSource & { width: number; height: number }, list: Annotation[], maxPx = Infinity) {
-  const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+/** Foto con sus anotaciones en un lienzo nuevo, con el lado mayor entre minPx y maxPx
+ *  (las fotos pequeñas se amplían para que el texto de las figuras salga nítido). */
+export function renderAnnotated(img: CanvasImageSource & { width: number; height: number }, list: Annotation[], maxPx = Infinity, minPx = 0) {
+  const long = Math.max(img.width, img.height);
+  const scale = Math.min(maxPx, Math.max(minPx, long)) / long;
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(img.width * scale);
   canvas.height = Math.round(img.height * scale);

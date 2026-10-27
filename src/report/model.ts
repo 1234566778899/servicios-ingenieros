@@ -80,7 +80,7 @@ async function fetchImage(path: string): Promise<Loaded> {
 /** Dibuja las figuras sobre una copia de la foto: la original no cambia */
 async function withAnnotations(img: Loaded, annotations: Annotation[]): Promise<Loaded> {
   const bmp = await createImageBitmap(new Blob([img.bytes as BlobPart], { type: 'image/jpeg' }));
-  const canvas = renderAnnotated(bmp, annotations);
+  const canvas = renderAnnotated(bmp, annotations, Infinity, 1200);
   bmp.close();
   const blob = await new Promise<Blob>((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob'))), 'image/jpeg', 0.9));
   const dataUrl = await new Promise<string>((res, rej) => {

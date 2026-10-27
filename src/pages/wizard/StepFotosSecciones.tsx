@@ -197,7 +197,6 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
   const remove = async () => {
     const p = toDelete!;
     setToDelete(null);
-    setViewer(null);
     patch((b) => ({ ...b, photos: b.photos.filter((x) => x.id !== p.id) }));
     try {
       must(await supabase.from('photos').delete().eq('id', p.id));
@@ -209,7 +208,6 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
     }
   };
 
-  const allPhotos = groups.flatMap((g) => photosOf(g.id));
   // Al cambiar de paso se guardan los títulos / descripciones que sigan en edición
   const flush = () => Promise.all(groups.filter((g) => drafts[g.id]).map(saveGroup));
 
@@ -265,6 +263,15 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
                       <Tooltip content="Mover después" relationship="label">
                         <Button size="small" appearance="subtle" icon={<ChevronRight20Regular />} disabled={readOnly || i === list.length - 1} onClick={() => move(p, g.id, i + 2)} />
                       </Tooltip>
+                      {!readOnly && (
+
+                        <Tooltip content="Eliminar foto" relationship="label">
+
+                          <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => setToDelete(p)} />
+
+                        </Tooltip>
+
+                      )}
                     </div>
                   </div>
                 ))}
@@ -306,26 +313,15 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
 
       {viewer && (
         <PhotoViewer
+          key={viewer.id}
           photo={viewer}
-          photos={allPhotos}
-          slots={groups.map((g) => ({ id: g.id, label: g.title }))}
-          slotOf={(p) => p.group_id!}
-          slotLabel="Sección"
-          slotCount={(id) => photosOf(id).length}
-          code=""
+          title={`${groups.find((g) => g.id === viewer.group_id)?.title ?? ''} · Foto ${photosOf(viewer.group_id!).findIndex((x) => x.id === viewer.id) + 1}`}
           readOnly={readOnly}
-          onNavigate={setViewer}
           onClose={() => setViewer(null)}
-          onDelete={() => setToDelete(viewer)}
-          onAnnotate={async (annotations) => {
-            must(await supabase.from('photos').update({ annotations }).eq('id', viewer.id));
-            patch((b) => ({ ...b, photos: b.photos.map((x) => (x.id === viewer.id ? { ...x, annotations } : x)) }));
-            notify('Edición guardada');
-          }}
-          onSave={async (caption, groupId, position) => {
-            must(await supabase.from('photos').update({ caption }).eq('id', viewer.id));
+          onSave={async (caption, annotations) => {
+            must(await supabase.from('photos').update({ caption: caption || null, annotations }).eq('id', viewer.id));
+            patch((b) => ({ ...b, photos: b.photos.map((x) => (x.id === viewer.id ? { ...x, caption: caption || null, annotations } : x)) }));
             setViewer(null);
-            await move({ ...viewer, caption }, groupId, position);
             notify('Cambios guardados');
           }}
         />

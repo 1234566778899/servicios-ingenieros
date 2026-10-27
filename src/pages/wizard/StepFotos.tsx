@@ -3,7 +3,7 @@ import {
   Badge, Button, Caption1, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens,
 } from '@fluentui/react-components';
 import {
-  Add24Regular, ArrowLeft20Regular, ArrowRight20Regular, CheckmarkCircle16Filled, ChevronLeft20Regular, ChevronRight20Regular,
+  Add24Regular, ArrowLeft20Regular, Delete16Regular, ArrowRight20Regular, CheckmarkCircle16Filled, ChevronLeft20Regular, ChevronRight20Regular,
 } from '@fluentui/react-icons';
 import { AsyncButton, Section } from '../../components/common';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -114,7 +114,6 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
   const remove = async () => {
     const p = toDelete!;
     setToDelete(null);
-    setViewer(null);
     patch((b) => ({ ...b, photos: b.photos.filter((x) => x.id !== p.id) }));
     try {
       must(await supabase.from('photos').delete().eq('id', p.id));
@@ -182,6 +181,15 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
                         <Tooltip content="Mover después" relationship="label">
                           <Button size="small" appearance="subtle" icon={<ChevronRight20Regular />} disabled={readOnly || i === list.length - 1} onClick={() => move(p, st.id, i + 2)} />
                         </Tooltip>
+                        {!readOnly && (
+
+                          <Tooltip content="Eliminar foto" relationship="label">
+
+                            <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => setToDelete(p)} />
+
+                          </Tooltip>
+
+                        )}
                       </div>
                     </div>
                   ))}
@@ -215,26 +223,15 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
 
       {viewer && (
         <PhotoViewer
+          key={viewer.id}
           photo={viewer}
-          photos={photosOf(viewer.service_equipment_id!).sort((a, b) => STAGES.findIndex((x) => x.id === a.stage) - STAGES.findIndex((x) => x.id === b.stage) || a.position - b.position)}
-          slots={STAGES}
-          slotOf={(p) => p.stage!}
-          slotLabel="Etapa"
-          slotCount={(st) => stagePhotos(viewer.service_equipment_id!, st as Stage).length}
-          code={eq?.code ?? ''}
+          title={`${eq?.code ? `${eq.code} · ` : ''}${STAGES.find((x) => x.id === viewer.stage)?.label} · Foto ${stagePhotos(viewer.service_equipment_id!, viewer.stage!).findIndex((x) => x.id === viewer.id) + 1}`}
           readOnly={readOnly}
-          onNavigate={setViewer}
           onClose={() => setViewer(null)}
-          onDelete={() => setToDelete(viewer)}
-          onAnnotate={async (annotations) => {
-            must(await supabase.from('photos').update({ annotations }).eq('id', viewer.id));
-            patch((b) => ({ ...b, photos: b.photos.map((x) => (x.id === viewer.id ? { ...x, annotations } : x)) }));
-            notify('Edición guardada');
-          }}
-          onSave={async (caption, stage, position) => {
-            must(await supabase.from('photos').update({ caption }).eq('id', viewer.id));
+          onSave={async (caption, annotations) => {
+            must(await supabase.from('photos').update({ caption: caption || null, annotations }).eq('id', viewer.id));
+            patch((b) => ({ ...b, photos: b.photos.map((x) => (x.id === viewer.id ? { ...x, caption: caption || null, annotations } : x)) }));
             setViewer(null);
-            await move({ ...viewer, caption }, stage as Stage, position);
             notify('Cambios guardados');
           }}
         />
