@@ -84,9 +84,10 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
   const equipmentMode = cat.hasEquipment(form.specialty) || (!!bundle?.equipment.length && withEquipment);
   const nextStep = equipmentMode ? 'equipos' : 'trabajos';
 
+  // Vista previa: el código real lo asigna el servidor al guardar (con el año de la fecha de ejecución)
   useEffect(() => {
-    if (!svc) supabase.rpc('peek_service_code').then(({ data }) => setNextCode(data ?? ''));
-  }, [svc]);
+    if (!svc) supabase.rpc('peek_service_code', { p_date: form.execution_date || null }).then(({ data }) => setNextCode(data ?? ''));
+  }, [svc, form.execution_date]);
 
   // Textos automáticos mientras el usuario no los edite a mano
   useEffect(() => {
