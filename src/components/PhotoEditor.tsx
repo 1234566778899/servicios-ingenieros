@@ -38,6 +38,7 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
   const [hover, setHover] = useState(false);
   const [color, setColor] = useState(ANNOTATION_COLORS[0].id);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const textInput = useRef<HTMLInputElement>(null);
   const hits = useRef<HitArea[]>([]);
   const drag = useRef<Drag | null>(null);
   const list = value;
@@ -141,8 +142,11 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
     set([...latest.current, a]);
     setSelected(a.id);
     if (tool === 'text') {
-      setTool('select');
-      return setTyping(a.id);
+      // Sigue en Texto (no pasa a Mover) y el clic no le quita el foco al cuadro donde se escribe
+      e.preventDefault();
+      setTyping(a.id);
+      setTimeout(() => textInput.current?.focus(), 0);
+      return;
     }
     drag.current = { mode: 'p2', id: a.id, start: [rx, ry], orig: a, created: true, moved: false };
   };
@@ -240,7 +244,7 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
             touchAction: 'none', cursor: readOnly ? 'default' : hover ? 'move' : tool === 'select' ? 'default' : 'crosshair',
           }} />
         {typed && c && (
-          <Input autoFocus size="small" value={typed.text} placeholder="Texto" aria-label="Texto"
+          <Input ref={textInput} autoFocus size="small" value={typed.text} placeholder="Texto" aria-label="Texto"
             style={{
               position: 'absolute', width: 220, maxWidth: '80%', transform: 'translate(-50%, -50%)',
               left: c.offsetLeft + typed.x1 * c.clientWidth, top: c.offsetTop + typed.y1 * c.clientHeight,
