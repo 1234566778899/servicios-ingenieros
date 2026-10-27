@@ -3,12 +3,15 @@ import {
   Caption1, Input, Spinner, Toolbar, ToolbarButton, ToolbarDivider, ToolbarRadioButton, ToolbarRadioGroup, Tooltip, tokens,
 } from '@fluentui/react-components';
 import {
-  ArrowDownRight20Regular, ArrowUndo20Regular, Circle20Regular, Delete20Regular, RectangleLandscape20Regular, TextT20Regular,
+  ArrowDownRight20Regular, ArrowUndo20Regular, Circle20Regular, Cursor20Regular, Delete20Regular, RectangleLandscape20Regular, TextT20Regular,
 } from '@fluentui/react-icons';
 import { signedUrl } from '../lib/services';
 import { ANNOTATION_COLORS, drawAnnotations, handleRadius, hitTest, type Annotation, type HitArea, type ShapeKind } from '../lib/annotations';
 
-const TOOLS: { id: ShapeKind; label: string; icon: ReactElement }[] = [
+type Tool = 'select' | ShapeKind;
+
+const TOOLS: { id: Tool; label: string; icon: ReactElement }[] = [
+  { id: 'select', label: 'Mover', icon: <Cursor20Regular /> },
   { id: 'arrow', label: 'Flecha', icon: <ArrowDownRight20Regular /> },
   { id: 'rect', label: 'Rectángulo', icon: <RectangleLandscape20Regular /> },
   { id: 'ellipse', label: 'Círculo', icon: <Circle20Regular /> },
@@ -20,13 +23,10 @@ const TOOLS: { id: ShapeKind; label: string; icon: ReactElement }[] = [
 const MIN_PX = 1200;
 const MAX_PX = 1600;
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
-/** Dónde va el texto de cada figura (relativo): inicio de la flecha, centro del rectángulo/círculo */
-const labelAt = (a: Annotation): [number, number] =>
-  a.kind === 'rect' || a.kind === 'ellipse' ? [(a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2] : [a.x1, a.y1];
 
 type Drag = { mode: 'move' | 'p1' | 'p2'; id: string; start: [number, number]; orig: Annotation; created: boolean; moved: boolean };
 
-/** Foto con figuras (flechas, rectángulos, círculos y textos) dibujadas encima. El texto se escribe sobre la misma foto. */
+/** Foto con figuras (flechas, rectángulos, círculos y textos) dibujadas encima. Los textos se escriben sobre la misma foto. */
 export function PhotoEditor({ path, value, onChange, readOnly }: {
   path: string; value: Annotation[]; onChange: (list: Annotation[]) => void; readOnly?: boolean;
 }) {
@@ -34,7 +34,8 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
   const [history, setHistory] = useState<Annotation[][]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [typing, setTyping] = useState<string | null>(null);
-  const [tool, setTool] = useState<ShapeKind>('arrow');
+  const [tool, setTool] = useState<Tool>('arrow');
+  const [hover, setHover] = useState(false);
   const [color, setColor] = useState(ANNOTATION_COLORS[0].id);
   const canvas = useRef<HTMLCanvasElement>(null);
   const hits = useRef<HitArea[]>([]);
@@ -134,17 +135,26 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
       drag.current = { mode: 'move', id: hit, start: [rx, ry], orig: latest.current.find((a) => a.id === hit)!, created: false, moved: false };
       return;
     }
+    if (tool === 'select') return setSelected(null);
     commit();
     const a: Annotation = { id: crypto.randomUUID(), kind: tool, x1: rx, y1: ry, x2: rx, y2: ry, color, text: '' };
     set([...latest.current, a]);
     setSelected(a.id);
-    if (tool === 'text') return setTyping(a.id);
+    if (tool === 'text') {
+      setTool('select');
+      return setTyping(a.id);
+    }
     drag.current = { mode: 'p2', id: a.id, start: [rx, ry], orig: a, created: true, moved: false };
   };
 
   const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const d = drag.current;
-    if (!d) return;
+    if (!d) {
+      // Sobre una figura el cursor indica que se puede mover
+      const { px, py, tol } = point(e);
+      setHover(!readOnly && !!hitTest(hits.current, px, py, tol));
+      return;
+    }
     const { rx, ry } = point(e);
     const o = d.orig;
     d.moved = true;
@@ -162,9 +172,9 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
     const d = drag.current;
     drag.current = null;
     if (!d) return;
-    // Un clic (sin arrastrar) sobre una figura abre su texto para escribir o corregir
+    // Un clic (sin arrastrar) sobre un texto lo abre para corregirlo
     if (!d.created) {
-      if (!d.moved) setTyping(d.id);
+      if (!d.moved && latest.current.find((x) => x.id === d.id)?.kind === 'text') setTyping(d.id);
       return;
     }
     const a = latest.current.find((x) => x.id === d.id);
@@ -173,11 +183,12 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
       if (a.kind === 'arrow') patch(a.id, { x1: clamp(a.x2 - 0.15), y1: clamp(a.y2 - 0.15) });
       else patch(a.id, { x1: clamp(a.x1 - 0.1), y1: clamp(a.y1 - 0.08), x2: clamp(a.x1 + 0.1), y2: clamp(a.y1 + 0.08) });
     }
-    setTyping(d.id);
+    // La figura queda lista: el siguiente clic la mueve en vez de dibujar otra
+    setTool('select');
+    setHover(true);
   };
 
   const c = canvas.current;
-  const at = typed && c ? labelAt(typed) : null;
 
   return (
     <div>
@@ -185,7 +196,7 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
         <Toolbar aria-label="Dibujar sobre la foto" size="small" checkedValues={{ tool: [tool], color: [color] }} style={{ flexWrap: 'wrap', padding: 0, marginBottom: 6 }}
           onCheckedValueChange={(_, d) => {
             const v = d.checkedItems[0];
-            if (d.name === 'tool') setTool(v as ShapeKind);
+            if (d.name === 'tool') setTool(v as Tool);
             if (d.name === 'color') {
               setColor(v);
               if (selected) { commit(); patch(selected, { color: v }); }
@@ -221,18 +232,18 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
         style={{ position: 'relative', display: 'flex', justifyContent: 'center', background: tokens.colorNeutralBackground3, borderRadius: tokens.borderRadiusMedium, outline: 'none' }}
         onKeyDown={(e) => { if (!typing && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); removeSelected(); } }}>
         {!img && <Spinner style={{ height: '50vh' }} label="Cargando foto…" />}
-        <canvas ref={canvas} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}
+        <canvas ref={canvas} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={() => setHover(false)}
           style={{
             // Ocupa todo el espacio disponible (55 % de la altura de la pantalla) sin deformarse, aunque la foto sea pequeña
             display: img ? 'block' : 'none', aspectRatio: img ? `${img.naturalWidth} / ${img.naturalHeight}` : undefined,
             width: img ? `min(100%, calc(55vh * ${img.naturalWidth / img.naturalHeight}))` : undefined, height: 'auto',
-            touchAction: 'none', cursor: readOnly ? 'default' : 'crosshair',
+            touchAction: 'none', cursor: readOnly ? 'default' : hover ? 'move' : tool === 'select' ? 'default' : 'crosshair',
           }} />
-        {typed && at && c && (
-          <Input autoFocus size="small" value={typed.text} placeholder="Escribe el texto (opcional)" aria-label="Texto de la figura"
+        {typed && c && (
+          <Input autoFocus size="small" value={typed.text} placeholder="Texto" aria-label="Texto"
             style={{
               position: 'absolute', width: 220, maxWidth: '80%', transform: 'translate(-50%, -50%)',
-              left: c.offsetLeft + at[0] * c.clientWidth, top: c.offsetTop + at[1] * c.clientHeight,
+              left: c.offsetLeft + typed.x1 * c.clientWidth, top: c.offsetTop + typed.y1 * c.clientHeight,
             }}
             onChange={(_, d) => patch(typed.id, { text: d.value })}
             onBlur={stopTyping}
@@ -241,7 +252,7 @@ export function PhotoEditor({ path, value, onChange, readOnly }: {
       </div>
       {!readOnly && (
         <Caption1 block style={{ color: tokens.colorNeutralForeground3, marginTop: 4 }}>
-          Elige una figura y arrastra sobre la foto; luego escribe su texto. Haz clic en una figura para moverla o cambiar su texto.
+          Elige una figura y arrastra sobre la foto para dibujarla. Después puedes moverla o estirarla desde sus extremos.
         </Caption1>
       )}
     </div>
