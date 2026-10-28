@@ -97,7 +97,6 @@ function memoriaBlocks(m: ReportModel, n: number, pageBreakBefore: boolean) {
   const kv: [string, string][] = [
     ['Cliente', m.clientName], ['Tienda / Sede', m.site?.name ?? ''], ['Dirección', siteAddress(m.site) || '—'],
     ['Tipo de servicio', m.serviceType], ['Fecha de ejecución', m.executionDate], ['Orden de trabajo', m.workOrder],
-    ['Técnico responsable', m.leadTech], ['Técnicos de apoyo', m.supportTechs],
   ];
   return [
     h2(`${n}. MEMORIA DESCRIPTIVA`, pageBreakBefore), ...(m.description ? [p(m.description)] : []),

@@ -65,8 +65,6 @@ const memoria = (m: ReportModel, n: number) => `<h2>${n}. MEMORIA DESCRIPTIVA</h
     <tr><td>Tipo de servicio</td><td>${esc(m.serviceType)}</td></tr>
     <tr><td>Fecha de ejecución</td><td>${esc(m.executionDate)}</td></tr>
     <tr><td>Orden de trabajo</td><td>${esc(m.workOrder)}</td></tr>
-    <tr><td>Técnico responsable</td><td>${esc(m.leadTech)}</td></tr>
-    <tr><td>Técnicos de apoyo</td><td>${esc(m.supportTechs)}</td></tr>
   </table>`;
 
 /** Celda de foto: la imagen (con sus figuras) y, si lo hay, el comentario debajo */
