@@ -58,10 +58,9 @@ export function StepHallazgos({ bundle, reload, patch, readOnly, goTo, registerS
     }
     if (m) {
       const fresh = (now: string, before: string) => splitLines(now).filter((x) => !splitLines(before).includes(x));
-      await rememberConcepts('conclusion', svc.specialty, fresh(c, saved.current.c));
-      await rememberConcepts('recomendacion', svc.specialty, fresh(r, saved.current.r));
-      invalidateConcepts('conclusion');
-      invalidateConcepts('recomendacion');
+      // Por detrás: no frenan el cambio de paso
+      void rememberConcepts('conclusion', svc.specialty, fresh(c, saved.current.c)).then(() => invalidateConcepts('conclusion'), () => {});
+      void rememberConcepts('recomendacion', svc.specialty, fresh(r, saved.current.r)).then(() => invalidateConcepts('recomendacion'), () => {});
     }
     saved.current = { c, r };
     notify('Conclusiones guardadas');

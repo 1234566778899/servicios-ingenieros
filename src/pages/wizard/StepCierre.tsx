@@ -49,13 +49,11 @@ export function StepCierre({ bundle, readOnly, goTo, registerSave }: StepProps &
     }
     for (const k of Object.keys(KIND) as (keyof Texts)[]) {
       const fresh = t[k].filter((x) => !saved.current[k].includes(x));
-      if (fresh.length) {
-        await rememberConcepts(KIND[k], svc.specialty, fresh);
-        invalidateConcepts(KIND[k]);
-      }
+      // Conceptos e historial por detrás: no frenan el cambio de paso
+      if (fresh.length) void rememberConcepts(KIND[k], svc.specialty, fresh).then(() => invalidateConcepts(KIND[k]), () => {});
     }
     saved.current = t;
-    await logActivity(svc.id, 'editó conclusiones y recomendaciones');
+    void logActivity(svc.id, 'editó conclusiones y recomendaciones').catch(() => {});
     notify('Conclusiones guardadas');
     return true;
   };

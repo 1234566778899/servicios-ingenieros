@@ -21,21 +21,30 @@ export function usesEquipment(b: Pick<ServiceBundle, 'service' | 'equipment'>, h
 }
 
 export async function loadServiceBundle(id: string): Promise<ServiceBundle> {
-  const service = must(await supabase.from('services').select('*').eq('id', id).single()) as Service;
+  // Dos vueltas al servidor como máximo (cada una son ~0,15 s): el checklist y los resultados necesitan los ids
+  // de los equipos, pero el resto se pide a la vez. (Filtrarlos con un join por el servicio es más lento:
+  // los permisos se evalúan fila por fila.)
   // Todo en bloques: un servicio grande (p. ej. 70 equipos × 15 ítems) supera las 1000 filas por consulta
   // y un checklist cortado saldría incompleto en el informe sin ningún error
-  const equipment = await fetchAll<ServiceEquipment>((a, b) =>
-    supabase.from('service_equipment').select('*').eq('service_id', id).order('position').order('id').range(a, b));
-  const seIds = equipment.map((e) => e.id);
-  const tplIds = [...new Set(equipment.map((e) => e.checklist_template_id).filter(Boolean))] as string[];
-  const [items, results, photos, photoGroups, findings, reports] = await Promise.all([
-    tplIds.length
-      ? fetchAll<TemplateItem>((a, b) => supabase.from('checklist_template_items').select('*').in('template_id', tplIds).order('position').order('id').range(a, b))
-      : [],
-    // Por grupos de equipos para no armar una URL enorme con cientos de ids
-    Promise.all(chunk(seIds, 100).map((ids) =>
-      fetchAll<ChecklistResult>((a, b) => supabase.from('checklist_results').select('*').in('service_equipment_id', ids).order('id').range(a, b))))
-      .then((parts) => parts.flat()),
+  const byEquipment = fetchAll<ServiceEquipment>((a, b) =>
+    supabase.from('service_equipment').select('*').eq('service_id', id).order('position').order('id').range(a, b))
+    .then(async (equipment) => {
+      const seIds = equipment.map((e) => e.id);
+      const tplIds = [...new Set(equipment.map((e) => e.checklist_template_id).filter(Boolean))] as string[];
+      const [items, results] = await Promise.all([
+        tplIds.length
+          ? fetchAll<TemplateItem>((a, b) => supabase.from('checklist_template_items').select('*').in('template_id', tplIds).order('position').order('id').range(a, b))
+          : [],
+        // Por grupos de equipos para no armar una URL enorme con cientos de ids
+        Promise.all(chunk(seIds, 100).map((ids) =>
+          fetchAll<ChecklistResult>((a, b) => supabase.from('checklist_results').select('*').in('service_equipment_id', ids).order('id').range(a, b))))
+          .then((parts) => parts.flat()),
+      ]);
+      return { equipment, items, results };
+    });
+  const [service, { equipment, items, results }, photos, photoGroups, findings, reports] = await Promise.all([
+    supabase.from('services').select('*').eq('id', id).single().then((r) => must(r) as Service),
+    byEquipment,
     fetchAll<Photo>((a, b) => supabase.from('photos').select('*').eq('service_id', id).order('position').order('id').range(a, b)),
     fetchAll<PhotoGroup>((a, b) => supabase.from('service_photo_groups').select('*').eq('service_id', id).order('position').order('id').range(a, b)),
     fetchAll<Finding>((a, b) => supabase.from('findings').select('*').eq('service_id', id).order('position').order('id').range(a, b)),
@@ -53,8 +62,9 @@ function chunk<T>(list: T[], size: number): T[][] {
 }
 
 export async function logActivity(serviceId: string | null, action: string) {
-  const { data } = await supabase.auth.getUser();
-  await supabase.from('activity_log').insert({ service_id: serviceId, action, user_id: data.user?.id });
+  // La sesión local basta (getUser consulta al servidor de Auth: una vuelta más en cada acción)
+  const { data } = await supabase.auth.getSession();
+  await supabase.from('activity_log').insert({ service_id: serviceId, action, user_id: data.session?.user.id });
 }
 
 /** Plantilla de checklist vigente para un tipo de equipo. */

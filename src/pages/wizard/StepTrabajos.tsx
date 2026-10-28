@@ -35,10 +35,11 @@ export function StepTrabajos({ bundle, readOnly, goTo, registerSave }: StepProps
       notify('No se pudo guardar', 'error', error.message);
       return false;
     }
-    await rememberConcepts('trabajo', svc.specialty, list.filter((t) => !saved.current.includes(t)));
+    // Conceptos e historial por detrás: no frenan el cambio de paso
+    void rememberConcepts('trabajo', svc.specialty, list.filter((t) => !saved.current.includes(t)))
+      .then(() => invalidateConcepts('trabajo'), () => {});
     saved.current = list;
-    invalidateConcepts('trabajo');
-    await logActivity(svc.id, `actualizó los trabajos realizados (${list.length})`);
+    void logActivity(svc.id, `actualizó los trabajos realizados (${list.length})`).catch(() => {});
     notify('Trabajos guardados');
     return true;
   };

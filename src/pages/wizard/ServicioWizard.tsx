@@ -31,6 +31,9 @@ const SERVICE_STEPS: [StepKey, string][] = [
   ['cierre', 'Conclusiones'], ['informe', 'Generar informe'],
 ];
 
+/** Pasos que leen el servicio directamente (sin copia local): no hace falta esperar la recarga para mostrarlos */
+const LIVE_STEPS: StepKey[] = ['equipos', 'fotos', 'informe'];
+
 const useStyles = makeStyles({
   steps: {
     backgroundColor: tokens.colorNeutralBackground1, borderRadius: tokens.borderRadiusLarge,
@@ -116,14 +119,19 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
   }, []);
   const patch = useCallback((fn: (b: ServiceBundle) => ServiceBundle) => setBundle((b) => b && fn(b)), []);
 
-  /** Guarda el paso actual, trae los datos al día (cambios de otros usuarios) y recién entonces cambia de paso. */
+  /** Guarda el paso actual, trae los datos al día (cambios de otros usuarios) y cambia de paso.
+   *  Los pasos que copian los datos al abrirse (formularios y textos) esperan la recarga para no partir de datos viejos;
+   *  el resto se muestra al instante y se actualiza solo cuando llega la recarga (salvo que se acabe de guardar algo:
+   *  p. ej. cambiar la especialidad cambia los pasos). */
   const goTo = async (n: StepKey, before?: () => Promise<unknown>) => {
     if (!serviceId || pending) return;
     setPending(n);
     try {
       await before?.();
+      const changed = !!saveHandler?.dirty?.();
       if (saveHandler && !(await saveHandler())) return;
-      await reload();
+      if (LIVE_STEPS.includes(n) && !changed) void reload();
+      else await reload();
       navigate(`/servicios/${serviceId}/editar?paso=${n}`);
     } finally {
       setPending(null);
@@ -175,7 +183,7 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
                 onClick={async () => {
                   setSaving(true);
                   try {
-                    await saveHandler();
+                    if (await saveHandler()) await reload();
                   } finally {
                     setSaving(false);
                   }

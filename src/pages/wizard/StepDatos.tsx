@@ -199,11 +199,11 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
       if (FIELDS.every((k) => same(f[k], current[k]))) return true;
       const ok = await update(current, f);
       if (ok) {
-        if (!same(f.prev_details, current.prev_details)) await rememberConcepts('detalle', '', f.prev_details);
+        // Conceptos e historial por detrás; la recarga la hace el asistente (al cambiar de paso o con "Guardar borrador")
+        if (!same(f.prev_details, current.prev_details)) void rememberConcepts('detalle', '', f.prev_details).catch(() => {});
         const changed = FIELDS.filter((k) => !same(f[k], current[k])).map((k) => `“${LABELS[k]}”`);
-        await logActivity(current.id, `editó ${changed.slice(0, 2).join(', ')}${changed.length > 2 ? '…' : ''}`);
+        void logActivity(current.id, `editó ${changed.slice(0, 2).join(', ')}${changed.length > 2 ? '…' : ''}`).catch(() => {});
         notify('Cambios guardados');
-        await reload();
       }
       return ok;
     } catch (e: any) {
@@ -386,7 +386,8 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
           onClick={async () => {
             if (readOnly) return goTo(nextStep);
             if (!svc) return save();
-            if (await save()) await goTo(nextStep);
+            // goTo guarda con el mismo handler y recarga antes de cambiar de paso
+            return goTo(nextStep);
           }}>
           {svc ? `Siguiente: ${equipmentMode ? 'Equipos' : 'Trabajos realizados'}` : 'Crear y continuar'}
         </AsyncButton>
