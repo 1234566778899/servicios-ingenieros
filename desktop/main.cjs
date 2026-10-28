@@ -1,7 +1,8 @@
 // Nordico Informes (escritorio): ventana de Electron que abre la app web de producción,
 // así cada despliegue en Vercel llega al escritorio sin reinstalar.
-const { app, BrowserWindow, Menu, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, session, shell } = require('electron');
 const path = require('node:path');
+const { autoUpdater } = require('electron-updater');
 
 const APP_URL = process.env.NORDICO_URL || 'https://servicios-ingenieros.vercel.app';
 const APP_ORIGIN = new URL(APP_URL).origin;
@@ -10,7 +11,9 @@ const EXT = {
   'application/pdf': '.pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
 };
+const UPDATE_EVERY = 4 * 60 * 60 * 1000;
 let win;
+let updateAsked = false;
 
 // Solo una instancia: abrir el acceso directo otra vez enfoca la ventana existente
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -19,6 +22,46 @@ app.on('second-instance', () => {
   if (win.isMinimized()) win.restore();
   win.focus();
 });
+
+// Actualizaciones: busca en GitHub Releases, descarga en segundo plano y pregunta antes de reiniciar.
+// Si dice «Más tarde», se instala sola al cerrar la app.
+function setupUpdates() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('update-downloaded', async (info) => {
+    if (updateAsked) return;
+    updateAsked = true;
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'info',
+      title: 'Actualización disponible',
+      message: `Hay una nueva versión de Nordico Informes (${info.version}).`,
+      detail: 'Guarda lo que estés haciendo. La app se cerrará, se actualizará y volverá a abrirse.',
+      buttons: ['Instalar ahora', 'Más tarde'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) autoUpdater.quitAndInstall(false, true);
+  });
+  autoUpdater.on('error', (e) => console.error('Actualización:', e?.message ?? e));
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  check();
+  setInterval(check, UPDATE_EVERY);
+}
+
+function checkNow() {
+  if (!app.isPackaged) return;
+  updateAsked = false; // si antes dijo «Más tarde», vuelve a preguntar
+  autoUpdater.checkForUpdates()
+    .then((r) => {
+      if (!r?.isUpdateAvailable) {
+        dialog.showMessageBox(win, { type: 'info', title: 'Nordico Informes', message: `Ya tienes la versión más reciente (${app.getVersion()}).` });
+      } else {
+        dialog.showMessageBox(win, { type: 'info', title: 'Nordico Informes', message: `Descargando la versión ${r.updateInfo.version}…`, detail: 'Te avisaremos cuando esté lista para instalar.' });
+      }
+    })
+    .catch(() => dialog.showMessageBox(win, { type: 'warning', title: 'Nordico Informes', message: 'No se pudo buscar actualizaciones. Revisa tu conexión a internet.' }));
+}
 
 function buildMenu() {
   Menu.setApplicationMenu(
@@ -37,6 +80,20 @@ function buildMenu() {
           { type: 'separator' },
           { role: 'togglefullscreen', label: 'Pantalla completa' },
           { role: 'toggleDevTools', label: 'Herramientas de desarrollo' },
+        ],
+      },
+      {
+        label: 'Ayuda',
+        submenu: [
+          { label: 'Buscar actualizaciones', click: checkNow },
+          { type: 'separator' },
+          {
+            label: 'Acerca de Nordico Informes',
+            click: () => dialog.showMessageBox(win, {
+              type: 'info', title: 'Nordico Informes',
+              message: 'Nórdico Ingenieros — Informes Técnicos', detail: `Versión ${app.getVersion()}`,
+            }),
+          },
         ],
       },
     ]),
@@ -105,6 +162,7 @@ app.whenReady().then(() => {
   });
   buildMenu();
   createWindow();
+  setupUpdates();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

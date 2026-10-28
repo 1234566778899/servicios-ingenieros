@@ -97,3 +97,15 @@ npm run dist:win   # instalador → desktop/release/Nordico-Informes-Setup-<vers
 ```
 
 Solo hace falta un instalador nuevo si cambia `desktop/` (ventana, ícono, manejo de archivos).
+
+### Actualizaciones automáticas (desde la 1.1.0)
+
+La app busca versiones nuevas en GitHub Releases de este repositorio al abrirse y cada 4 horas
+(también en Ayuda → Buscar actualizaciones), las descarga en segundo plano y pregunta
+«Instalar ahora / Más tarde»; si se pospone, se instala al cerrar la app. Para publicar una versión:
+
+```bash
+cd desktop
+# subir "version" en package.json (p. ej. 1.1.0 → 1.2.0)
+GH_TOKEN=$(gh auth token) npm run release:win   # crea el release v<versión> con el .exe y latest.yml
+```
