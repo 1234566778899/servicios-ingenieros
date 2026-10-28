@@ -6,7 +6,7 @@ import { ConnectionProvider } from './lib/connection';
 import { RouterProvider, match, useRouter } from './lib/router';
 import { Shell } from './components/Shell';
 import { Loading } from './components/common';
-import { Login } from './pages/Login';
+import { CambiarContrasena, Login, Restablecer } from './pages/Login';
 import { Inicio } from './pages/Inicio';
 import { Servicios } from './pages/Servicios';
 import { NoPermitido } from './pages/NoPermitido';
@@ -58,9 +58,13 @@ function Routes() {
 }
 
 function Gate() {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, loading, mustChangePassword } = useAuth();
+  const { path } = useRouter();
+  // El enlace del correo de recuperación se atiende aunque haya otra sesión abierta
+  if (match('/restablecer', path)) return <Restablecer />;
   if (loading) return <Loading label="Iniciando…" />;
   if (!session || !profile) return <Login />;
+  if (mustChangePassword) return <CambiarContrasena />;
   return (
     <CatalogsProvider>
       <Shell>

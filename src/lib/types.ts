@@ -7,18 +7,23 @@ export type Priority = 'Alta' | 'Media' | 'Baja';
 export interface Profile {
   id: string;
   full_name: string;
-  email: string;
+  dni: string | null;
+  /** Correo real: solo para restablecer la contraseña (el ingreso es con DNI) */
+  email: string | null;
   cargo: string | null;
   role_id: string;
   active: boolean;
   deactivated_reason: string | null;
   last_seen_at: string | null;
+  must_change_password: boolean;
 }
 
-export interface Client { id: string; name: string }
+/** Cliente = marca (UPN, BBVA…); la razón social y el RUC son de quien contrata el servicio. */
+export interface Client { id: string; name: string; business_name: string | null; ruc: string | null }
 export interface Site {
   id: string; client_id: string; name: string; short_name: string | null;
   address: string | null; equipment_prefix: string | null; contact_name: string | null;
+  code: string | null; district: string | null; province: string | null;
 }
 export interface EquipmentType { id: string; name: string; default_unit: string | null }
 /** Opción de catálogo simple: tipos de servicio y especialidades */

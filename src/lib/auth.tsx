@@ -10,9 +10,16 @@ interface AuthState {
   perms: Set<string>;
   loading: boolean;
   can: (perm: string) => boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  /** Primer ingreso (contraseña = DNI) o enlace de recuperación: debe definir una contraseña nueva */
+  mustChangePassword: boolean;
+  signIn: (dni: string, password: string) => Promise<void>;
+  recover: (tokenHash: string) => Promise<void>;
+  changePassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
+
+/** En Auth cada usuario tiene un correo interno derivado de su DNI; el correo real está en profiles.email. */
+export const authEmail = (dni: string) => `${dni}@dni.nordicoingenieros.com`;
 
 const AuthCtx = createContext<AuthState>(null as any);
 
@@ -22,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roleName, setRoleName] = useState('');
   const [perms, setPerms] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [recovering, setRecovering] = useState(false);
 
   const loadProfile = useCallback(async (s: Session | null) => {
     if (!s) {
@@ -68,22 +76,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(t);
   }, [profile]);
 
-  const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const signIn = async (dni: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail(dni), password });
     if (error) {
-      throw new Error(error.message === 'Invalid login credentials' ? 'Usuario o contraseña incorrectos.' : error.message);
+      throw new Error(error.message === 'Invalid login credentials' ? 'DNI o contraseña incorrectos.' : error.message);
     }
     setLoading(true);
     await loadProfile(data.session);
   };
 
+  // Enlace del correo de recuperación: inicia sesión con el token y obliga a definir una contraseña nueva
+  const recover = async (tokenHash: string) => {
+    const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' });
+    if (error) throw new Error('El enlace no es válido o ya venció. Solicita uno nuevo desde «¿Olvidaste tu contraseña?».');
+    setRecovering(true);
+    setSession(data.session);
+    setLoading(true);
+    await loadProfile(data.session);
+  };
+
+  const changePassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      throw new Error(error.message.includes('different from the old')
+        ? 'La contraseña nueva debe ser distinta de la actual.'
+        : error.message);
+    }
+    must(await supabase.rpc('password_changed'));
+    setRecovering(false);
+    setProfile((p) => (p ? { ...p, must_change_password: false } : p));
+  };
+
   const signOut = async () => {
+    setRecovering(false);
     await supabase.auth.signOut();
   };
 
   return (
     <AuthCtx.Provider
-      value={{ session, profile, roleName, perms, loading, can: (p) => perms.has(p), signIn, signOut }}
+      value={{
+        session, profile, roleName, perms, loading, can: (p) => perms.has(p),
+        mustChangePassword: !!profile && (profile.must_change_password || recovering),
+        signIn, recover, changePassword, signOut,
+      }}
     >
       {children}
     </AuthCtx.Provider>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Avatar, Button, Caption1, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown,
-  Field, Input, Link, MessageBar, MessageBarBody, Option, Radio, RadioGroup, Spinner, Switch, Table, TableBody,
+  Field, Input, Link, MessageBar, MessageBarBody, Option, Spinner, Switch, Table, TableBody,
   TableCell, TableHeader, TableHeaderCell, TableRow, Text, Title1, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { Dismiss20Regular, PersonAdd20Regular, Search20Regular } from '@fluentui/react-icons';
@@ -21,6 +21,7 @@ const useStyles = makeStyles({
   form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
   span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
   name: { display: 'flex', alignItems: 'center', gap: '8px' },
+  ellipsis: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
 });
 
 async function adminUsers(body: Record<string, unknown>) {
@@ -32,7 +33,7 @@ async function adminUsers(body: Record<string, unknown>) {
   return data;
 }
 
-type Draft = Partial<Profile> & { mode?: 'invite' | 'password'; password?: string };
+type Draft = Partial<Profile>;
 
 export function Usuarios() {
   const s = useStyles();
@@ -47,6 +48,7 @@ export function Usuarios() {
   const [formError, setFormError] = useState('');
   const [toDeactivate, setToDeactivate] = useState<Profile | null>(null);
   const [reason, setReason] = useState('');
+  const [toReset, setToReset] = useState<Profile | null>(null);
 
   const { data: roles } = useAsync(async () => must(await supabase.from('roles').select('*').order('position')) as { id: string; name: string }[], []);
   const roleName = (id?: string) => roles?.find((r) => r.id === id)?.name ?? id ?? '';
@@ -59,7 +61,7 @@ export function Usuarios() {
     () => users.filter((u) =>
       (!role || u.role_id === role) &&
       (status === 'todos' || (status === 'activos' ? u.active : !u.active)) &&
-      (!q || `${u.full_name} ${u.email}`.toLowerCase().includes(q.toLowerCase()))),
+      (!q || `${u.full_name} ${u.dni ?? ''} ${u.email ?? ''}`.toLowerCase().includes(q.toLowerCase()))),
     [users, q, role, status],
   );
 
@@ -68,18 +70,19 @@ export function Usuarios() {
   const save = async () => {
     if (!draft) return;
     setFormError('');
-    if (!draft.full_name || !draft.email || !draft.role_id) return setFormError('Completa nombre, correo y rol.');
-    if (!draft.id && draft.mode === 'password' && (draft.password?.length ?? 0) < 8) return setFormError('La contraseña temporal debe tener al menos 8 caracteres.');
+    if (!draft.full_name || !draft.dni || !draft.role_id) return setFormError('Completa nombre, DNI y rol.');
+    if (!/^[0-9]{8}$/.test(draft.dni)) return setFormError('El DNI debe tener 8 dígitos.');
     setBusy(true);
     try {
+      const fields = { dni: draft.dni, email: draft.email, full_name: draft.full_name, cargo: draft.cargo, role_id: draft.role_id };
       if (draft.id) {
-        must(await supabase.from('profiles').update({ full_name: draft.full_name, cargo: draft.cargo || null, role_id: draft.role_id }).eq('id', draft.id));
+        await adminUsers({ action: 'update', id: draft.id, ...fields });
         const before = users.find((u) => u.id === draft.id);
         if (before && before.active !== draft.active) await adminUsers({ action: 'set_active', id: draft.id, active: draft.active });
       } else {
-        await adminUsers({ action: 'create', email: draft.email.trim().toLowerCase(), full_name: draft.full_name, cargo: draft.cargo, role_id: draft.role_id, active: draft.active ?? true, mode: draft.mode, password: draft.password });
+        await adminUsers({ action: 'create', ...fields, active: draft.active ?? true });
       }
-      notify(draft.id ? 'Usuario actualizado' : draft.mode === 'invite' ? `Invitación enviada a ${draft.email}` : 'Usuario creado');
+      notify(draft.id ? 'Usuario actualizado' : 'Usuario creado', 'success', draft.id ? undefined : `Ingresa con su DNI ${draft.dni}; esa es también su contraseña inicial.`);
       setDraft(null);
       cat.reload();
     } catch (e: any) {
@@ -99,6 +102,16 @@ export function Usuarios() {
     }
   };
 
+  const resetPassword = async (u: Profile) => {
+    try {
+      await adminUsers({ action: 'reset_password', id: u.id });
+      notify(`Contraseña de ${u.full_name} restablecida`, 'success', 'Ahora es su DNI; al ingresar se le pedirá cambiarla.');
+      cat.reload();
+    } catch (e: any) {
+      notify('No se pudo restablecer', 'error', e.message);
+    }
+  };
+
   const kpis = [
     ['Usuarios activos', users.filter((u) => u.active).length],
     ['Conectados ahora', users.filter(online).length],
@@ -111,7 +124,7 @@ export function Usuarios() {
       <PageHeader
         crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Administración' }, { label: 'Usuarios' }]}
         title="Usuarios"
-        actions={<Button appearance="primary" icon={<PersonAdd20Regular />} onClick={() => { setFormError(''); setDraft({ role_id: 'tecnico', active: true, mode: 'invite' }); }}>Nuevo usuario</Button>}
+        actions={<Button appearance="primary" icon={<PersonAdd20Regular />} onClick={() => { setFormError(''); setDraft({ role_id: 'tecnico', active: true }); }}>Nuevo usuario</Button>}
       />
       <div className={s.kpis}>
         {kpis.map(([l, v]) => (
@@ -123,7 +136,7 @@ export function Usuarios() {
       </div>
       <Section>
         <div className={s.filters}>
-          <Field label="Buscar"><Input contentBefore={<Search20Regular />} placeholder="Nombre o correo…" value={q} onChange={(_, d) => setQ(d.value)} style={{ width: 260 }} /></Field>
+          <Field label="Buscar"><Input contentBefore={<Search20Regular />} placeholder="Nombre, DNI o correo…" value={q} onChange={(_, d) => setQ(d.value)} style={{ width: 260 }} /></Field>
           <Field label="Rol">
             <Dropdown value={role ? roleName(role) : 'Todos'} selectedOptions={[role]} onOptionSelect={(_, d) => setRole(d.optionValue ?? '')}>
               <Option value="">Todos</Option>
@@ -143,6 +156,7 @@ export function Usuarios() {
           <TableHeader>
             <TableRow>
               <TableHeaderCell>Nombre</TableHeaderCell>
+              <TableHeaderCell>DNI</TableHeaderCell>
               <TableHeaderCell>Correo</TableHeaderCell>
               <TableHeaderCell>Cargo</TableHeaderCell>
               <TableHeaderCell>Rol</TableHeaderCell>
@@ -160,13 +174,16 @@ export function Usuarios() {
                     {u.full_name}
                   </span>
                 </TableCell>
-                <TableCell>{u.email}</TableCell>
+                <TableCell>{u.dni ?? '—'}</TableCell>
+                <TableCell className={s.ellipsis} title={u.email ?? undefined}>{u.email ?? <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>Sin correo</Caption1>}</TableCell>
                 <TableCell>{u.cargo ?? '—'}</TableCell>
                 <TableCell>{roleName(u.role_id)}</TableCell>
-                <TableCell>{online(u) ? 'Ahora' : timeAgo(u.last_seen_at)}</TableCell>
+                <TableCell>{u.must_change_password ? 'Aún no ingresa' : online(u) ? 'Ahora' : timeAgo(u.last_seen_at)}</TableCell>
                 <TableCell><StatusBadge status={u.active ? 'Activo' : 'Inactivo'} /></TableCell>
                 <TableCell>
                   <Link onClick={() => { setFormError(''); setDraft({ ...u }); }}>Editar</Link>
+                  {' · '}
+                  <Link disabled={u.id === me?.id || !u.active} onClick={() => setToReset(u)}>Restablecer contraseña</Link>
                   {' · '}
                   {u.active
                     ? <Link disabled={u.id === me?.id} onClick={() => { setReason(''); setToDeactivate(u); }}>Desactivar</Link>
@@ -188,24 +205,18 @@ export function Usuarios() {
                 <ErrorBar error={formError} />
                 <div className={s.form}>
                   <Field label="Nombres y apellidos" required><Input value={draft.full_name ?? ''} onChange={(_, d) => setDraft({ ...draft, full_name: d.value })} /></Field>
-                  <Field label="Correo corporativo" required><Input type="email" disabled={!!draft.id} value={draft.email ?? ''} onChange={(_, d) => setDraft({ ...draft, email: d.value })} /></Field>
+                  <Field label="DNI" required hint={draft.id ? 'Es el usuario con el que ingresa.' : 'Es su usuario y su contraseña inicial.'}>
+                    <Input inputMode="numeric" maxLength={8} value={draft.dni ?? ''} onChange={(_, d) => setDraft({ ...draft, dni: d.value.replace(/\D/g, '').slice(0, 8) })} />
+                  </Field>
+                  <Field label="Correo" hint="Opcional: solo para restablecer su contraseña.">
+                    <Input type="email" value={draft.email ?? ''} onChange={(_, d) => setDraft({ ...draft, email: d.value })} />
+                  </Field>
                   <Field label="Cargo"><Input value={draft.cargo ?? ''} onChange={(_, d) => setDraft({ ...draft, cargo: d.value })} /></Field>
                   <Field label="Rol" required>
                     <Dropdown value={roleName(draft.role_id)} selectedOptions={[draft.role_id ?? '']} onOptionSelect={(_, d) => setDraft({ ...draft, role_id: d.optionValue! })}>
                       {(roles ?? []).map((r) => <Option key={r.id} value={r.id}>{r.name}</Option>)}
                     </Dropdown>
                   </Field>
-                  {!draft.id && (
-                    <Field label="Contraseña inicial" className={s.span2}>
-                      <RadioGroup value={draft.mode} onChange={(_, d) => setDraft({ ...draft, mode: d.value as any })}>
-                        <Radio value="invite" label="Enviar invitación por correo para que defina su contraseña" />
-                        <Radio value="password" label="Asignar contraseña temporal" />
-                      </RadioGroup>
-                      {draft.mode === 'password' && (
-                        <Input type="password" style={{ marginTop: 8 }} placeholder="Mínimo 8 caracteres" value={draft.password ?? ''} onChange={(_, d) => setDraft({ ...draft, password: d.value })} />
-                      )}
-                    </Field>
-                  )}
                   <Switch className={s.span2} label="Usuario activo" checked={draft.active ?? true} disabled={draft.id === me?.id}
                     onChange={(_, d) => setDraft({ ...draft, active: d.checked })} />
                 </div>
@@ -221,6 +232,15 @@ export function Usuarios() {
           </DialogBody>
         </DialogSurface>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!toReset}
+        title={`¿Restablecer la contraseña de ${toReset?.full_name}?`}
+        body={`Su contraseña volverá a ser su DNI (${toReset?.dni ?? ''}) y al ingresar se le pedirá crear una nueva.`}
+        confirmLabel="Restablecer"
+        onConfirm={async () => { await resetPassword(toReset!); setToReset(null); }}
+        onCancel={() => setToReset(null)}
+      />
 
       <ConfirmDialog
         open={!!toDeactivate}

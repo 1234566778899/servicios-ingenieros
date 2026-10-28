@@ -114,7 +114,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem disabled>{profile?.email}</MenuItem>
+                <MenuItem disabled>DNI {profile?.dni}{profile?.email ? ` · ${profile.email}` : ''}</MenuItem>
                 <MenuItem icon={<SignOut20Regular />} onClick={signOut}>Cerrar sesión</MenuItem>
               </MenuList>
             </MenuPopover>
