@@ -45,6 +45,16 @@ export interface ReportModel {
   baseName: string;
 }
 
+/** Filas que se ajustan a sus fotos: todas a la misma altura y, juntas, el ancho de la página
+ *  (sin recortar ni deformar). La altura tiene un tope, así una foto sola o una fila de verticales
+ *  no ocupa media hoja; las fotos muy alargadas se encajan en una caja de proporción limitada.
+ *  Devuelve el ancho de cada caja y la altura de la fila, en las mismas unidades que `width`. */
+export function rowLayout(row: ReportImage[], width: number, gap: number, maxHeight: number) {
+  const ratios = row.map((i) => Math.min(2.5, Math.max(0.5, i.width / i.height)));
+  const height = Math.min(maxHeight, (width - gap * (row.length - 1)) / ratios.reduce((a, r) => a + r, 0));
+  return { height, widths: ratios.map((r) => r * height) };
+}
+
 type Loaded = Omit<ReportImage, 'caption'>;
 // Las fotos ya descargadas se reutilizan: cambiar la fecha o la plantilla, o recargar tras generar, vuelve a armar el modelo
 const imageCache = new Map<string, Promise<Loaded>>();

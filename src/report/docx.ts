@@ -2,7 +2,7 @@ import {
   AlignmentType, BorderStyle, Document, Header, ImageRun, Packer, Paragraph, ShadingType, Table, TableCell,
   TableRow, TextRun, VerticalAlign, WidthType,
 } from 'docx';
-import type { ReportImage, ReportModel } from './model';
+import { rowLayout, type ReportImage, type ReportModel } from './model';
 import logoDataUrl from '../assets/logo.png?inline';
 
 // Logo 400×113 px embebido en el bundle
@@ -121,30 +121,37 @@ const photoCell = (im: ReportImage | null, width: number, box: [number, number],
 const NONE = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
 const noBorders = { top: NONE, bottom: NONE, left: NONE, right: NONE };
 
-/** Fila de fotos sin bordes: hasta 3 por fila y centradas (si la última queda sola sale al medio).
- *  Una tabla por fila, con un párrafo en medio para que Word no las una. */
-const photoRow = (row: ReportImage[]) => [
-  new Table({
-    alignment: AlignmentType.CENTER,
-    width: { size: dxa(33.33 * row.length), type: WidthType.DXA },
-    columnWidths: row.map(() => dxa(33.33)),
-    borders: { ...noBorders, insideHorizontal: NONE, insideVertical: NONE },
-    rows: [new TableRow({
-      cantSplit: true,
-      children: row.map((im) => new TableCell({
-        borders: noBorders,
-        verticalAlign: VerticalAlign.CENTER,
-        width: { size: dxa(33.33), type: WidthType.DXA },
-        margins: { top: 0, bottom: 0, left: 60, right: 60 },
-        children: [
-          new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, 205, 275)] }),
-          ...(im.caption ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] })] : []),
-        ],
-      })),
-    })],
-  }),
-  new Paragraph({ spacing: { after: 0 }, children: [new TextRun({ text: '', size: 8 })] }),
-];
+/** Fila de fotos sin bordes: hasta 3, a la misma altura y centradas (si la última queda sola sale al medio).
+ *  Una tabla por fila, con un párrafo en medio para que Word no las una.
+ *  Medidas en px (96 ppp): ~673 de ancho útil, 8 entre fotos (márgenes de celda), 250 de alto como máximo. */
+const PX = 15; // twips por px
+const PAD = 60; // margen izquierdo/derecho de cada celda, en twips
+const photoRow = (row: ReportImage[]) => {
+  const { height, widths } = rowLayout(row, CONTENT / PX, (PAD * 2) / PX, 250);
+  const cols = widths.map((w) => Math.floor(w * PX + PAD * 2));
+  return [
+    new Table({
+      alignment: AlignmentType.CENTER,
+      width: { size: cols.reduce((a, c) => a + c, 0), type: WidthType.DXA },
+      columnWidths: cols,
+      borders: { ...noBorders, insideHorizontal: NONE, insideVertical: NONE },
+      rows: [new TableRow({
+        cantSplit: true,
+        children: row.map((im, i) => new TableCell({
+          borders: noBorders,
+          verticalAlign: VerticalAlign.CENTER,
+          width: { size: cols[i], type: WidthType.DXA },
+          margins: { top: 0, bottom: 0, left: PAD, right: PAD },
+          children: [
+            new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, widths[i], height)] }),
+            ...(im.caption ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] })] : []),
+          ],
+        })),
+      })],
+    }),
+    new Paragraph({ spacing: { after: 0 }, children: [new TextRun({ text: '', size: 8 })] }),
+  ];
+};
 
 /** Salto de página al empezar un bloque (como las páginas de la vista previa), salvo al inicio del documento. */
 function pager(body: unknown[]) {

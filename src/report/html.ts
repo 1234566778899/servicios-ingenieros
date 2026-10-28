@@ -1,4 +1,4 @@
-import type { ReportImage, ReportModel } from './model';
+import { rowLayout, type ReportImage, type ReportModel } from './model';
 import logo from '../assets/logo.png?inline';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -25,8 +25,8 @@ const CSS = `
   .ph img { max-width: 100%; max-height: 46mm; display: block; margin: 0 auto 2px; }
   .ph .cap { font-size: 7.5pt; color: #444; }
   .prow { display: flex; justify-content: center; gap: 4mm; margin-bottom: 4mm; page-break-inside: avoid; }
-  .prow figure { margin: 0; width: calc((100% - 8mm) / 3); text-align: center; }
-  .prow .box { height: 76mm; display: flex; align-items: center; justify-content: center; }
+  .prow figure { margin: 0; text-align: center; }
+  .prow .box { display: flex; align-items: center; justify-content: center; }
   .prow img { max-width: 100%; max-height: 100%; display: block; }
   .prow figcaption { font-size: 7.5pt; color: #444; margin-top: 2px; }
   .desc { text-align: center; font-weight: bold; margin: 8px 0 14px; }
@@ -73,9 +73,13 @@ const photoCell = (img: ReportImage | null, empty = '') => (img
   ? `<td><img src="${img.dataUrl}"/>${img.caption ? `<div class="cap">${esc(img.caption)}</div>` : ''}</td>`
   : `<td class="cap">${empty}</td>`);
 
-/** Fila de fotos sin tabla: hasta 3, centradas (si la última queda sola sale al medio) */
-const photoRow = (row: ReportImage[]) => `<div class="prow">${row.map((img) =>
-  `<figure><div class="box"><img src="${img.dataUrl}"/></div>${img.caption ? `<figcaption>${esc(img.caption)}</figcaption>` : ''}</figure>`).join('')}</div>`;
+/** Fila de fotos sin tabla: hasta 3, a la misma altura y centradas (si la última queda sola sale al medio).
+ *  Medidas en mm: 178 de ancho útil, 4 entre fotos, 72 de alto como máximo. */
+const photoRow = (row: ReportImage[]) => {
+  const { height, widths } = rowLayout(row, 178, 4, 72);
+  return `<div class="prow">${row.map((img, i) =>
+    `<figure style="width:${widths[i].toFixed(1)}mm"><div class="box" style="height:${height.toFixed(1)}mm"><img src="${img.dataUrl}"/></div>${img.caption ? `<figcaption>${esc(img.caption)}</figcaption>` : ''}</figure>`).join('')}</div>`;
+};
 
 const bullets = (xs: string[]) => `<ul>${xs.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>`;
 const doc = (m: ReportModel, pages: string[]) =>
