@@ -41,3 +41,16 @@ export function pad2(n: number) {
 export function shortType(t: string) {
   return t.replace(/^Mantenimiento /, '').replace(/ de equipos$/, '').replace(/ técnica$/, '').replace(/^./, (c) => c.toUpperCase());
 }
+
+/** Minúsculas y sin tildes, para buscar sin importar cómo se escribió. */
+export const fold = (s?: string | null) => (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+/** Dirección de la sede con distrito y provincia, sin repetirlos si ya están escritos en la dirección. */
+export function siteAddress(site?: { address: string | null; district?: string | null; province?: string | null } | null) {
+  if (!site) return '';
+  const parts = [site.address ?? ''];
+  for (const p of [site.district, site.province]) {
+    if (p && !parts.some((x) => fold(x).includes(fold(p)))) parts.push(p);
+  }
+  return parts.filter(Boolean).join(', ');
+}

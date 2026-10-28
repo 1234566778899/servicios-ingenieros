@@ -17,11 +17,11 @@ import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
 import { supabase, must, fetchAll } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
-import { fmtDateTime } from '../lib/format';
+import { fmtDateTime, fold } from '../lib/format';
 import { useMediaQuery } from '../lib/media';
 import { useNotify } from '../lib/toast';
 import { invalidateConcepts } from '../components/Concepts';
-import type { CatalogFinding, CatalogOption, ChecklistTemplate, Concept, ConceptKind, Priority, Site, TemplateItem } from '../lib/types';
+import type { CatalogFinding, CatalogOption, Client, ChecklistTemplate, Concept, ConceptKind, Priority, Site, TemplateItem } from '../lib/types';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
@@ -467,15 +467,33 @@ function ClientsSites({ admin }: { admin: boolean }) {
   const cat = useCatalogs();
   const notify = useNotify();
   const [clientId, setClientId] = useState('');
-  const [newClient, setNewClient] = useState<string | null>(null);
+  const [client, setClient] = useState<Partial<Client> | null>(null);
   const [site, setSite] = useState<Partial<Site> | null>(null);
+  const [q, setQ] = useState('');
+  const [page, setPage] = useState(0);
+  const [size, setSize] = usePageSize('sedes', 25);
 
   useEffect(() => { if (!clientId && cat.clients[0]) setClientId(cat.clients[0].id); }, [cat.clients, clientId]);
+  useEffect(() => { setQ(''); setPage(0); }, [clientId]);
+  const current = cat.clients.find((c) => c.id === clientId);
 
-  const createClient = async () => {
-    const { data, error } = await supabase.from('clients').insert({ name: newClient!.trim() }).select('id').single();
-    if (error) return notify('No se pudo crear', 'error', error.message);
-    setNewClient(null);
+  // Hay clientes con cientos de sedes: búsqueda por nombre, código, distrito o dirección, y paginación
+  const rows = useMemo(() => {
+    const words = fold(q).split(' ').filter(Boolean);
+    return cat.sites.filter((x) => x.client_id === clientId &&
+      words.every((w) => fold(`${x.name} ${x.code ?? ''} ${x.district ?? ''} ${x.province ?? ''} ${x.address ?? ''}`).includes(w)));
+  }, [cat.sites, clientId, q]);
+  const pg = Math.min(page, Math.max(0, Math.ceil(rows.length / size) - 1));
+
+  const saveClient = async () => {
+    const ruc = client!.ruc?.trim() || null;
+    if (ruc && !/^[0-9]{11}$/.test(ruc)) return notify('El RUC debe tener 11 dígitos', 'warning');
+    const payload = { name: client!.name!.trim(), business_name: client!.business_name?.trim() || null, ruc };
+    const { data, error } = client!.id
+      ? await supabase.from('clients').update(payload).eq('id', client!.id).select('id').single()
+      : await supabase.from('clients').insert(payload).select('id').single();
+    if (error) return notify('No se pudo guardar', 'error', error.message);
+    setClient(null);
     await cat.reload();
     setClientId(data.id);
   };
@@ -483,7 +501,10 @@ function ClientsSites({ admin }: { admin: boolean }) {
   const saveSite = async () => {
     if (!site?.name) return notify('Escribe el nombre de la sede', 'warning');
     const { id, ...row } = site;
-    const payload = { ...row, client_id: clientId, equipment_prefix: row.equipment_prefix?.toUpperCase() || null };
+    const payload = {
+      ...row, client_id: clientId, equipment_prefix: row.equipment_prefix?.toUpperCase() || null,
+      code: row.code?.trim() || null, district: row.district?.trim().toUpperCase() || null, province: row.province?.trim().toUpperCase() || null,
+    };
     const res = id ? await supabase.from('sites').update(payload).eq('id', id) : await supabase.from('sites').insert(payload);
     if (res.error) return notify('No se pudo guardar', 'error', res.error.message);
     notify('Sede guardada');
@@ -495,31 +516,45 @@ function ClientsSites({ admin }: { admin: boolean }) {
 
   return (
     <div className={s.grid}>
-      <Section title="Clientes" actions={admin && <Button size="small" icon={<Add20Regular />} aria-label="Nuevo cliente" onClick={() => setNewClient('')} />}>
+      <Section title="Clientes" actions={admin && <Button size="small" icon={<Add20Regular />} aria-label="Nuevo cliente" onClick={() => setClient({ name: '' })} />}>
         {cat.loading ? <Spinner size="small" style={{ padding: 16 }} /> : (
           <EquipmentRail equipment={clientRail} selected={clientId} onSelect={setClientId} sub={() => null}
             right={(c) => <Caption1>{cat.sites.filter((x) => x.client_id === c.id).length} sedes</Caption1>} />
         )}
       </Section>
       <Section title={`Sedes de ${cat.clientName(clientId)}`}
-        actions={admin && clientId && <Button appearance="primary" icon={<Add20Regular />} onClick={() => setSite({})}>Nueva sede</Button>}>
+        subtitle={current?.business_name ? `${current.business_name}${current.ruc ? ` · RUC ${current.ruc}` : ''}` : undefined}
+        actions={admin && clientId && (
+          <>
+            <Button icon={<Edit20Regular />} onClick={() => setClient(current!)}>Editar cliente</Button>
+            <Button appearance="primary" icon={<Add20Regular />} onClick={() => setSite({})}>Nueva sede</Button>
+          </>
+        )}>
+        <div className={s.filters}>
+          <Field label="Buscar sede">
+            <Input contentBefore={<Search20Regular />} placeholder="Nombre, código, distrito o dirección…" value={q}
+              onChange={(_, d) => { setQ(d.value); setPage(0); }} style={{ width: 320, maxWidth: '100%' }} />
+          </Field>
+        </div>
         <Table size="small">
           <TableHeader>
             <TableRow>
               <TableHeaderCell>Sede</TableHeaderCell>
-              <TableHeaderCell>Nombre corto</TableHeaderCell>
+              <TableHeaderCell>Código</TableHeaderCell>
               <TableHeaderCell>Dirección</TableHeaderCell>
+              <TableHeaderCell>Distrito / provincia</TableHeaderCell>
               <TableHeaderCell>Prefijo de equipos</TableHeaderCell>
               <TableHeaderCell>Contacto</TableHeaderCell>
               {admin && <TableHeaderCell style={{ width: 70 }} />}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {cat.sites.filter((x) => x.client_id === clientId).map((x) => (
+            {rows.slice(pg * size, (pg + 1) * size).map((x) => (
               <TableRow key={x.id}>
                 <TableCell><Text weight="semibold">{x.name}</Text></TableCell>
-                <TableCell>{x.short_name ?? '—'}</TableCell>
+                <TableCell>{x.code ?? '—'}</TableCell>
                 <TableCell><Caption1>{x.address ?? '—'}</Caption1></TableCell>
+                <TableCell><Caption1>{[x.district, x.province].filter(Boolean).join(' · ') || '—'}</Caption1></TableCell>
                 <TableCell>{x.equipment_prefix ?? '—'}</TableCell>
                 <TableCell>{x.contact_name ?? '—'}</TableCell>
                 {admin && <TableCell><Link onClick={() => setSite(x)}>Editar</Link></TableCell>}
@@ -528,18 +563,33 @@ function ClientsSites({ admin }: { admin: boolean }) {
           </TableBody>
         </Table>
         {cat.loading && <Spinner style={{ padding: 24 }} />}
+        <Pager page={pg} size={size} total={rows.length} noun="sedes" onPage={setPage}
+          onSize={(n) => { setPage(Math.floor((pg * size) / n)); setSize(n); }}
+          note={!cat.loading && !rows.length ? (q ? 'No hay sedes con esa búsqueda.' : 'Este cliente aún no tiene sedes.') : undefined} />
       </Section>
 
-      <Dialog open={newClient !== null} onOpenChange={(_, d) => !d.open && setNewClient(null)}>
-        <DialogSurface style={{ maxWidth: 420 }}>
+      <Dialog open={!!client} onOpenChange={(_, d) => !d.open && setClient(null)}>
+        <DialogSurface style={{ maxWidth: 480 }}>
           <DialogBody>
-            <DialogTitle>Nuevo cliente</DialogTitle>
-            <DialogContent>
-              <Field label="Nombre del cliente" required><Input value={newClient ?? ''} onChange={(_, d) => setNewClient(d.value)} /></Field>
-            </DialogContent>
+            <DialogTitle>{client?.id ? `Editar ${client.name}` : 'Nuevo cliente'}</DialogTitle>
+            {client && (
+              <DialogContent>
+                <div className={s.form}>
+                  <Field label="Cliente / marca" required className={s.span2} hint="Como se elige al registrar el servicio (p. ej. UPN, BBVA, BATA).">
+                    <Input value={client.name ?? ''} onChange={(_, d) => setClient({ ...client, name: d.value })} />
+                  </Field>
+                  <Field label="Razón social" className={s.span2}>
+                    <Input value={client.business_name ?? ''} onChange={(_, d) => setClient({ ...client, business_name: d.value })} />
+                  </Field>
+                  <Field label="RUC">
+                    <Input inputMode="numeric" maxLength={11} value={client.ruc ?? ''} onChange={(_, d) => setClient({ ...client, ruc: d.value.replace(/\D/g, '') })} />
+                  </Field>
+                </div>
+              </DialogContent>
+            )}
             <DialogActions>
-              <Button onClick={() => setNewClient(null)}>Cancelar</Button>
-              <AsyncButton appearance="primary" disabled={!newClient?.trim()} onClick={createClient}>Crear</AsyncButton>
+              <Button onClick={() => setClient(null)}>Cancelar</Button>
+              <AsyncButton appearance="primary" disabled={!client?.name?.trim()} onClick={saveClient}>Guardar</AsyncButton>
             </DialogActions>
           </DialogBody>
         </DialogSurface>
@@ -552,8 +602,11 @@ function ClientsSites({ admin }: { admin: boolean }) {
               <DialogContent>
                 <div className={s.form}>
                   <Field label="Nombre de la sede" required><Input value={site.name ?? ''} onChange={(_, d) => setSite({ ...site, name: d.value })} placeholder="TAF Santa Anita" /></Field>
-                  <Field label="Nombre corto / centro comercial"><Input value={site.short_name ?? ''} onChange={(_, d) => setSite({ ...site, short_name: d.value })} /></Field>
+                  <Field label="Código de tienda / agencia" hint="Ej.: PE106, BK076"><Input value={site.code ?? ''} onChange={(_, d) => setSite({ ...site, code: d.value })} /></Field>
                   <Field label="Dirección" className={s.span2}><Input value={site.address ?? ''} onChange={(_, d) => setSite({ ...site, address: d.value })} /></Field>
+                  <Field label="Distrito"><Input value={site.district ?? ''} onChange={(_, d) => setSite({ ...site, district: d.value })} /></Field>
+                  <Field label="Provincia"><Input value={site.province ?? ''} onChange={(_, d) => setSite({ ...site, province: d.value })} /></Field>
+                  <Field label="Nombre corto / centro comercial"><Input value={site.short_name ?? ''} onChange={(_, d) => setSite({ ...site, short_name: d.value })} /></Field>
                   <Field label="Prefijo de códigos de equipo" hint="Ej.: TAFSA → TAFSA-01, TAFSA-02…"><Input value={site.equipment_prefix ?? ''} onChange={(_, d) => setSite({ ...site, equipment_prefix: d.value })} /></Field>
                   <Field label="Contacto de tienda"><Input value={site.contact_name ?? ''} onChange={(_, d) => setSite({ ...site, contact_name: d.value })} /></Field>
                 </div>

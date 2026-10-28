@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Caption1, Dropdown, Field, Input, Option, Radio, RadioGroup, Text, Textarea, Tooltip,
+  Button, Caption1, Combobox, Dropdown, Field, Input, Option, Radio, RadioGroup, Text, Textarea, Tooltip,
   Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles, tokens,
 } from '@fluentui/react-components';
 import { ArrowClockwise16Regular, ArrowRight20Regular } from '@fluentui/react-icons';
@@ -14,7 +14,7 @@ import { useRouter } from '../../lib/router';
 import { supabase } from '../../lib/supabase';
 import { addInventoryToService, loadSiteInventory, logActivity, rememberConcepts, type ServiceBundle } from '../../lib/services';
 import { coverTitle, memoria, equipmentSummary, DEFAULT_PREV_DETAILS } from '../../lib/texts';
-import { fmtDateTime, today } from '../../lib/format';
+import { fmtDateTime, fold, siteAddress, today } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
 import type { Service } from '../../lib/types';
 import type { SaveHandler, StepProps } from './ServicioWizard';
@@ -71,6 +71,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
           cover_title: '', description: '', prev_details: DEFAULT_PREV_DETAILS, report_template_id: null,
         },
   );
+  const [siteQuery, setSiteQuery] = useState(() => (form.site_id ? cat.siteName(form.site_id) : ''));
   const [autoTitle, setAutoTitle] = useState(!svc?.cover_title);
   const [autoDesc, setAutoDesc] = useState(!svc?.description);
   const [nextCode, setNextCode] = useState('');
@@ -251,6 +252,11 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
 
   const techs = cat.users.filter((u) => u.active);
   const sites = cat.sites.filter((x) => x.client_id === form.client_id);
+  // Hay clientes con cientos de sedes: se busca por nombre, código, distrito o dirección
+  const siteMatches = useMemo(() => {
+    const words = fold(siteQuery).split(' ').filter(Boolean);
+    return sites.filter((x) => words.every((w) => fold(`${x.name} ${x.code ?? ''} ${x.district ?? ''} ${x.province ?? ''} ${x.address ?? ''}`).includes(w))).slice(0, 50);
+  }, [sites, siteQuery]);
 
   return (
     <>
@@ -272,16 +278,23 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
               </Field>
               <Field label="Cliente" required>
                 <Dropdown placeholder="Selecciona" value={form.client_id ? cat.clientName(form.client_id) : ''} selectedOptions={[form.client_id]}
-                  onOptionSelect={(_, d) => setForm((f) => ({ ...f, client_id: d.optionValue!, site_id: '' }))}>
+                  onOptionSelect={(_, d) => { setForm((f) => ({ ...f, client_id: d.optionValue!, site_id: '' })); setSiteQuery(''); }}>
                   {cat.clients.map((c) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
                 </Dropdown>
               </Field>
               <Field label="Tienda / Sede" required>
-                <Dropdown placeholder={form.client_id ? 'Selecciona' : 'Elige un cliente'} disabled={!form.client_id}
-                  value={form.site_id ? cat.siteName(form.site_id) : ''} selectedOptions={[form.site_id]}
-                  onOptionSelect={(_, d) => set('site_id', d.optionValue!)}>
-                  {sites.map((x) => <Option key={x.id} value={x.id}>{x.name}</Option>)}
-                </Dropdown>
+                <Combobox placeholder={form.client_id ? `Busca entre ${sites.length} sedes` : 'Elige un cliente'} disabled={!form.client_id}
+                  value={siteQuery} selectedOptions={[form.site_id]}
+                  onChange={(e) => setSiteQuery(e.target.value)}
+                  onOpenChange={(_, d) => { if (!d.open) setSiteQuery(form.site_id ? cat.siteName(form.site_id) : ''); }}
+                  onOptionSelect={(_, d) => { if (d.optionValue) { set('site_id', d.optionValue); setSiteQuery(cat.siteName(d.optionValue)); } }}>
+                  {siteMatches.map((x) => (
+                    <Option key={x.id} value={x.id} text={x.name}>
+                      {x.name}{(x.district || x.province) && <Caption1 style={{ marginLeft: 6, color: tokens.colorNeutralForeground3 }}>{x.district ?? x.province}</Caption1>}
+                    </Option>
+                  ))}
+                  {!siteMatches.length && <Option disabled value="" text="">Sin coincidencias</Option>}
+                </Combobox>
               </Field>
               <Field label="Especialidad" required>
                 <Dropdown placeholder="Selecciona" value={form.specialty} selectedOptions={[form.specialty]} onOptionSelect={(_, d) => set('specialty', d.optionValue!)}>
@@ -306,7 +319,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                 </Dropdown>
               </Field>
               <Field label="Dirección (de la sede)" className={s.span2}>
-                <Input readOnly value={site?.address ?? ''} placeholder="Se completa al elegir la sede" />
+                <Input readOnly value={siteAddress(site)} placeholder="Se completa al elegir la sede" />
               </Field>
               <Field label="Contacto de tienda">
                 <Input value={form.site_contact ?? ''} onChange={(_, d) => set('site_contact', d.value)} />

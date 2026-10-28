@@ -1,3 +1,4 @@
+import { siteAddress } from './format';
 import type { Finding, ServiceEquipment, Site } from './types';
 
 const num2 = (n: number) => String(n).padStart(2, '0');
@@ -13,7 +14,7 @@ export function coverTitle(serviceType: string, specialty: string, site?: Site |
 export function memoria(serviceType: string, specialty: string, site?: Site | null, withEquipment = true) {
   const name = (site?.name ?? '').toUpperCase();
   const what = withEquipment ? `de equipos de ${lower(specialty)}` : `de ${lower(specialty)}`;
-  return `El presente informe corresponde al servicio de ${lower(serviceType)} ${what} para la tienda ${name}, ubicado en ${site?.address ?? '—'}.`;
+  return `El presente informe corresponde al servicio de ${lower(serviceType)} ${what} para la tienda ${name}, ubicado en ${siteAddress(site) || '—'}.`;
 }
 
 export function equipmentSummary(serviceType: string, equipment: ServiceEquipment[], typeName: (id?: string | null) => string) {

@@ -2,6 +2,7 @@ import {
   AlignmentType, BorderStyle, Document, Header, ImageRun, Packer, Paragraph, ShadingType, Table, TableCell,
   TableRow, TextRun, VerticalAlign, WidthType,
 } from 'docx';
+import { siteAddress } from '../lib/format';
 import { rowLayout, type ReportImage, type ReportModel } from './model';
 import logoDataUrl from '../assets/logo.png?inline';
 
@@ -94,7 +95,7 @@ function coverParagraphs(m: ReportModel) {
 
 function memoriaBlocks(m: ReportModel, n: number, pageBreakBefore: boolean) {
   const kv: [string, string][] = [
-    ['Cliente', m.clientName], ['Tienda / Sede', m.site?.name ?? ''], ['Dirección', m.site?.address ?? '—'],
+    ['Cliente', m.clientName], ['Tienda / Sede', m.site?.name ?? ''], ['Dirección', siteAddress(m.site) || '—'],
     ['Tipo de servicio', m.serviceType], ['Fecha de ejecución', m.executionDate], ['Orden de trabajo', m.workOrder],
     ['Técnico responsable', m.leadTech], ['Técnicos de apoyo', m.supportTechs],
   ];

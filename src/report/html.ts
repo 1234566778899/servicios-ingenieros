@@ -1,3 +1,4 @@
+import { siteAddress } from '../lib/format';
 import { rowLayout, type ReportImage, type ReportModel } from './model';
 import logo from '../assets/logo.png?inline';
 
@@ -60,7 +61,7 @@ const memoria = (m: ReportModel, n: number) => `<h2>${n}. MEMORIA DESCRIPTIVA</h
   <table class="kv">
     <tr><td>Cliente</td><td>${esc(m.clientName)}</td></tr>
     <tr><td>Tienda / Sede</td><td>${esc(m.site?.name ?? '')}</td></tr>
-    <tr><td>Dirección</td><td>${esc(m.site?.address ?? '—')}</td></tr>
+    <tr><td>Dirección</td><td>${esc(siteAddress(m.site) || '—')}</td></tr>
     <tr><td>Tipo de servicio</td><td>${esc(m.serviceType)}</td></tr>
     <tr><td>Fecha de ejecución</td><td>${esc(m.executionDate)}</td></tr>
     <tr><td>Orden de trabajo</td><td>${esc(m.workOrder)}</td></tr>
