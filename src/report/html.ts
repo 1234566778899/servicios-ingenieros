@@ -17,18 +17,18 @@ const CSS = `
   h2 { font-size: 11pt; background: #dde6f0; padding: 5px 8px; margin: 16px 0 8px; border-left: 4px solid #1f4e79; }
   h3 { font-size: 10pt; margin: 12px 0 6px; }
   .cover { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; min-height: 220mm; gap: 18px; }
-  .cover h1 { font-size: 20pt; color: #1f4e79; margin: 0; line-height: 1.3; }
-  .cover .meta { font-size: 11pt; }
+  .cover h1 { font-size: 30pt; color: #000; margin: 0 8mm; line-height: 1.3; font-weight: 900; }
   .kv td:first-child { width: 32%; font-weight: bold; background: #f3f3f3; }
   .ph td { text-align: center; vertical-align: middle; width: 30%; height: 52mm; }
   .ph td[rowspan] { width: 10%; font-weight: bold; background: #f3f3f3; }
   .ph tr { page-break-inside: avoid; }
   .ph img { max-width: 100%; max-height: 46mm; display: block; margin: 0 auto 2px; }
   .ph .cap { font-size: 7.5pt; color: #444; }
-  .ph2 td { text-align: center; vertical-align: middle; width: 50%; height: 72mm; }
-  .ph2 tr { page-break-inside: avoid; }
-  .ph2 img { max-width: 100%; max-height: 66mm; display: block; margin: 0 auto 2px; }
-  .ph2 .cap { font-size: 7.5pt; color: #444; }
+  .prow { display: flex; justify-content: center; gap: 4mm; margin-bottom: 4mm; page-break-inside: avoid; }
+  .prow figure { margin: 0; width: calc((100% - 8mm) / 3); text-align: center; }
+  .prow .box { height: 76mm; display: flex; align-items: center; justify-content: center; }
+  .prow img { max-width: 100%; max-height: 100%; display: block; }
+  .prow figcaption { font-size: 7.5pt; color: #444; margin-top: 2px; }
   .desc { text-align: center; font-weight: bold; margin: 8px 0 14px; }
   .nc { color: #b00020; font-weight: bold; }
   p { margin: 6px 0; text-align: justify; line-height: 1.4; }
@@ -53,8 +53,6 @@ const page = (m: ReportModel, body: string) => `<div class="page">${header(m)}${
 const cover = (m: ReportModel) => page(m, `
   <div class="cover">
     <h1>${esc(m.coverTitle).replace(' · ', '<br/>')}</h1>
-    <div class="meta">${esc(m.clientName)} · ${esc(m.site?.name ?? '')}<br/>${esc(m.executionDate)}</div>
-    <div class="meta"><b>NÓRDICO INGENIEROS</b><br/>INFORME TÉCNICO · ${esc(m.serviceCode)}</div>
   </div>`);
 
 const memoria = (m: ReportModel, n: number) => `<h2>${n}. MEMORIA DESCRIPTIVA</h2>
@@ -74,6 +72,10 @@ const memoria = (m: ReportModel, n: number) => `<h2>${n}. MEMORIA DESCRIPTIVA</h
 const photoCell = (img: ReportImage | null, empty = '') => (img
   ? `<td><img src="${img.dataUrl}"/>${img.caption ? `<div class="cap">${esc(img.caption)}</div>` : ''}</td>`
   : `<td class="cap">${empty}</td>`);
+
+/** Fila de fotos sin tabla: hasta 3, centradas (si la última queda sola sale al medio) */
+const photoRow = (row: ReportImage[]) => `<div class="prow">${row.map((img) =>
+  `<figure><div class="box"><img src="${img.dataUrl}"/></div>${img.caption ? `<figcaption>${esc(img.caption)}</figcaption>` : ''}</figure>`).join('')}</div>`;
 
 const bullets = (xs: string[]) => `<ul>${xs.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>`;
 const doc = (m: ReportModel, pages: string[]) =>
@@ -101,9 +103,7 @@ function renderServiceHtml(m: ReportModel) {
     groups.forEach((g, i) => {
       pages.push(page(m, `${i === 0 ? `<h2>${sec}. REGISTRO FOTOGRÁFICO</h2>` : ''}
         <h3>${sec}.${i + 1}. ${esc(g.title)}</h3>
-        <table class="ph2">
-          ${g.rows.map((row) => `<tr>${row.map((img) => photoCell(img)).join('')}</tr>`).join('')}
-        </table>
+        ${g.rows.map(photoRow).join('')}
         ${g.description ? `<p class="desc">${esc(g.description)}</p>` : ''}`));
     });
   }

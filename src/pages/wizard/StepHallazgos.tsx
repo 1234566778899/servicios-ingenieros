@@ -181,7 +181,7 @@ export function StepHallazgos({ bundle, reload, patch, readOnly, goTo, registerS
           </Field>
         </div>
         <Caption1 block style={{ marginTop: 8, color: tokens.colorNeutralForeground3 }}>
-          Los equipos sin hallazgos ({conformes.map((e) => e.code).join(', ') || 'ninguno'}) se reportan como “Conforme · sin observaciones”.
+          Los equipos sin hallazgos ({conformes.map((e) => e.code).join(', ') || 'ninguno'}) se reportan en las conclusiones como “Los demás equipos se encuentran conformes”, sin listar sus códigos.
           Los textos usan las plantillas del catálogo de hallazgos.
         </Caption1>
       </Section>

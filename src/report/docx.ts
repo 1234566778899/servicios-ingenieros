@@ -88,11 +88,7 @@ function img(i: ReportImage, boxW = 170, boxH = 125) {
 function coverParagraphs(m: ReportModel) {
   return [
     new Paragraph({ spacing: { before: 3600 } }),
-    ...m.coverTitle.split(' · ').map((t) => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text: t, bold: true, size: 36, color: BLUE, font: 'Arial' })] })),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [new TextRun({ text: `${m.clientName} · ${m.site?.name ?? ''}`, size: 22, font: 'Arial' })] }),
-    p(m.executionDate, { align: AlignmentType.CENTER, size: 22 }),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [new TextRun({ text: 'NÓRDICO INGENIEROS', bold: true, size: 22, font: 'Arial' })] }),
-    p(`INFORME TÉCNICO · ${m.serviceCode}`, { align: AlignmentType.CENTER, size: 22 }),
+    ...m.coverTitle.split(' · ').map((t) => new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120, line: 312 }, children: [new TextRun({ text: t, bold: true, size: 60, color: '000000', font: 'Arial Black' })] })),
   ];
 }
 
@@ -121,6 +117,34 @@ const photoCell = (im: ReportImage | null, width: number, box: [number, number],
       ...(im.caption ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] })] : []),
     ]
   : [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: empty, font: 'Arial' })] })], { width });
+
+const NONE = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+const noBorders = { top: NONE, bottom: NONE, left: NONE, right: NONE };
+
+/** Fila de fotos sin bordes: hasta 3 por fila y centradas (si la última queda sola sale al medio).
+ *  Una tabla por fila, con un párrafo en medio para que Word no las una. */
+const photoRow = (row: ReportImage[]) => [
+  new Table({
+    alignment: AlignmentType.CENTER,
+    width: { size: dxa(33.33 * row.length), type: WidthType.DXA },
+    columnWidths: row.map(() => dxa(33.33)),
+    borders: { ...noBorders, insideHorizontal: NONE, insideVertical: NONE },
+    rows: [new TableRow({
+      cantSplit: true,
+      children: row.map((im) => new TableCell({
+        borders: noBorders,
+        verticalAlign: VerticalAlign.CENTER,
+        width: { size: dxa(33.33), type: WidthType.DXA },
+        margins: { top: 0, bottom: 0, left: 60, right: 60 },
+        children: [
+          new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, 205, 275)] }),
+          ...(im.caption ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] })] : []),
+        ],
+      })),
+    })],
+  }),
+  new Paragraph({ spacing: { after: 0 }, children: [new TextRun({ text: '', size: 8 })] }),
+];
 
 /** Salto de página al empezar un bloque (como las páginas de la vista previa), salvo al inicio del documento. */
 function pager(body: unknown[]) {
@@ -152,11 +176,7 @@ function serviceBody(m: ReportModel) {
     groups.forEach((g, i) => {
       if (i === 0) body.push(h2(`${sec}. REGISTRO FOTOGRÁFICO`, pg.take()));
       body.push(h3(`${sec}.${i + 1}. ${g.title}`, i > 0));
-      body.push(new Table({
-        width: { size: CONTENT, type: WidthType.DXA },
-        columnWidths: [50, 50].map(dxa),
-        rows: g.rows.map((row) => new TableRow({ cantSplit: true, children: row.map((im) => photoCell(im, 50, [290, 215])) })),
-      }));
+      body.push(...g.rows.flatMap(photoRow));
       if (g.description) body.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 120 }, children: [new TextRun({ text: g.description, bold: true, size: 19, font: 'Arial' })] }));
     });
   }

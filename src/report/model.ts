@@ -34,8 +34,8 @@ export interface ReportModel {
   }[];
   findings: { n: number; code: string; finding: string; cause: string; action: string; recommendation: string; priority: string }[];
   workItems: string[];
-  /** Secciones del registro fotográfico, en filas de 2 fotos */
-  photoGroups: { title: string; description: string; rows: (ReportImage | null)[][] }[];
+  /** Secciones del registro fotográfico, en filas de 3 fotos (la última sin completar: se centra) */
+  photoGroups: { title: string; description: string; rows: ReportImage[][] }[];
   conclusions: string[];
   observations: string[];
   recommendations: string[];
@@ -180,7 +180,8 @@ export async function buildReportModel(
   const photoGroups = await Promise.all(
     [...b.photoGroups].sort((x, y) => x.position - y.position).map(async (g) => {
       const list = b.photos.filter((p) => p.group_id === g.id).sort((x, y) => x.position - y.position);
-      return { title: g.title.toUpperCase(), description: g.description ?? '', rows: rowsOf(await images(list), 2) };
+      const rows = rowsOf(await images(list), 3).map((r) => r.filter((x): x is ReportImage => !!x));
+      return { title: g.title.toUpperCase(), description: g.description ?? '', rows };
     }),
   );
 
@@ -191,8 +192,13 @@ export async function buildReportModel(
   if (withEquipment) {
     if (!s.conclusions) conclusions = splitLines(conclusionsFrom(b.findings, codeOf));
     if (!s.recommendations) recommendations = splitLines(recommendationsFrom(b.findings, codeOf));
-    const sinHallazgo = b.equipment.filter((e) => !b.findings.some((f) => f.service_equipment_id === e.id)).map((e) => e.code);
-    if (sinHallazgo.length) conclusions.push(`Los equipos ${sinHallazgo.join(', ')} se encuentran conformes, sin observaciones.`);
+    // Sin listar los códigos (al cliente no le gusta la ristra de MSCUS-01, MSCUS-02…)
+    const sinHallazgo = b.equipment.filter((e) => !b.findings.some((f) => f.service_equipment_id === e.id)).length;
+    if (sinHallazgo === b.equipment.length && sinHallazgo) {
+      conclusions.push(sinHallazgo === 1 ? 'El equipo se encuentra conforme, sin observaciones.' : 'Todos los equipos se encuentran conformes, sin observaciones.');
+    } else if (sinHallazgo) {
+      conclusions.push(sinHallazgo === 1 ? 'El equipo restante se encuentra conforme, sin observaciones.' : 'Los demás equipos se encuentran conformes, sin observaciones.');
+    }
     conclusions = numbered(conclusions);
     recommendations = numbered(recommendations);
   }
