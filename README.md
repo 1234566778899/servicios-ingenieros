@@ -83,3 +83,17 @@ src/
   assets/            logos
 supabase/functions/  Edge Function admin-users
 ```
+
+## Versión de escritorio (Windows)
+
+`desktop/` es una app Electron independiente que abre la versión de producción
+(https://servicios-ingenieros.vercel.app): cada despliegue en Vercel llega al escritorio sin reinstalar.
+
+```bash
+cd desktop
+npm install
+npm start          # probar en local (NORDICO_URL=http://localhost:5173 para apuntar a Vite)
+npm run dist:win   # instalador → desktop/release/Nordico-Informes-Setup-<versión>.exe
+```
+
+Solo hace falta un instalador nuevo si cambia `desktop/` (ventana, ícono, manejo de archivos).

@@ -1,0 +1,39 @@
+{
+  "name": "nordico-informes-desktop",
+  "productName": "Nordico Informes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nórdico Ingenieros — Informes Técnicos (escritorio)",
+  "author": "Nórdico Ingenieros",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "pe.nordico.informes",
+    "files": [
+      "main.cjs",
+      "offline.html",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Nordico Informes",
+      "artifactName": "Nordico-Informes-Setup-${version}.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.10.0",
+    "electron-builder": "^26.18.0"
+  }
+}

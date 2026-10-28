@@ -59,7 +59,9 @@ export async function fetchReportFile(r: Report, kind: 'docx' | 'pdf') {
 
 export async function openReportFile(r: Report, kind: 'docx' | 'pdf') {
   const f = await fetchReportFile(r, kind);
-  window.open(URL.createObjectURL(new Blob([f.data as BlobPart])));
+  // El tipo permite al navegador mostrar el PDF; el nombre tras "#" lo usa la app de escritorio al abrirlo
+  const url = URL.createObjectURL(new Blob([f.data as BlobPart], { type: kind === 'docx' ? DOCX : 'application/pdf' }));
+  window.open(`${url}#${encodeURIComponent(f.name)}`);
 }
 
 export async function saveReportFile(r: Report, kind: 'docx' | 'pdf') {
