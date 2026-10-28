@@ -8,6 +8,7 @@ import { useCatalogs } from '../lib/catalogs';
 import { supabase, must } from '../lib/supabase';
 import { logActivity, type ServiceBundle } from '../lib/services';
 import type { CatalogFinding, Finding, Priority } from '../lib/types';
+import { friendlyError } from '../lib/errors';
 
 const useStyles = makeStyles({
   form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
@@ -92,7 +93,7 @@ export function FindingDialog({ open, bundle, initial, onClose, onSaved }: {
       onSaved();
       onClose();
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }

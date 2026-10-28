@@ -14,6 +14,7 @@ import { useAsync } from '../lib/useAsync';
 import { timeAgo } from '../lib/format';
 import { useNotify } from '../lib/toast';
 import type { Profile } from '../lib/types';
+import { friendlyError } from '../lib/errors';
 
 const useStyles = makeStyles({
   kpis: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' } },
@@ -86,7 +87,7 @@ export function Usuarios() {
       setDraft(null);
       cat.reload();
     } catch (e: any) {
-      setFormError(e.message);
+      setFormError(friendlyError(e));
     } finally {
       setBusy(false);
     }

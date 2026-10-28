@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import type { Session } from '@supabase/supabase-js';
 import { supabase, must } from './supabase';
 import type { Profile } from './types';
+import { friendlyError } from './errors';
 
 interface AuthState {
   session: Session | null;
@@ -79,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (dni: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail(dni), password });
     if (error) {
-      throw new Error(error.message === 'Invalid login credentials' ? 'DNI o contraseña incorrectos.' : error.message);
+      throw new Error(friendlyError(error));
     }
     setLoading(true);
     await loadProfile(data.session);
@@ -98,9 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const changePassword = async (password: string) => {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) {
-      throw new Error(error.message.includes('different from the old')
-        ? 'La contraseña nueva debe ser distinta de la actual.'
-        : error.message);
+      throw new Error(friendlyError(error));
     }
     must(await supabase.rpc('password_changed'));
     setRecovering(false);

@@ -18,6 +18,7 @@ import { fmtDateTime, fold, siteAddress, today } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
 import type { Service } from '../../lib/types';
 import type { SaveHandler, StepProps } from './ServicioWizard';
+import { friendlyError } from '../../lib/errors';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
@@ -208,7 +209,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
       }
       return ok;
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e));
       return false;
     }
   };
@@ -238,7 +239,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
         await reload();
       }
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e));
     }
   };
 

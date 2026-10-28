@@ -1,4 +1,5 @@
 import { Toast, ToastBody, ToastTitle, useToastController } from '@fluentui/react-components';
+import { friendlyError } from './errors';
 
 export const TOASTER_ID = 'app-toaster';
 
@@ -8,7 +9,7 @@ export function useNotify() {
     dispatchToast(
       <Toast>
         <ToastTitle>{title}</ToastTitle>
-        {body && <ToastBody>{body}</ToastBody>}
+        {body && <ToastBody>{friendlyError(body)}</ToastBody>}
       </Toast>,
       { intent, timeout: intent === 'error' ? 8000 : 4000 },
     );

@@ -9,6 +9,7 @@ import { useAuth } from '../lib/auth';
 import { useConnection } from '../lib/connection';
 import { useRouter } from '../lib/router';
 import { supabase } from '../lib/supabase';
+import { friendlyError } from '../lib/errors';
 
 const REMEMBER_KEY = 'nordico.rememberedDni';
 // Cuenta de demostración (solo se muestra si está configurada en .env)
@@ -96,7 +97,7 @@ export function Login() {
         else localStorage.removeItem(REMEMBER_KEY);
       } catch { /* almacenamiento no disponible */ }
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -114,7 +115,7 @@ export function Login() {
     setBusy(false);
     if (error) {
       const detail = await (error as any).context?.json?.().catch(() => null);
-      setError(detail?.error ?? error.message);
+      setError(friendlyError(detail?.error ?? error));
     } else setInfo(data.message);
   };
 
@@ -189,7 +190,7 @@ export function CambiarContrasena() {
     try {
       await changePassword(password);
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err));
       setBusy(false);
     }
   };
@@ -232,7 +233,7 @@ export function Restablecer() {
   useEffect(() => {
     const token = new URLSearchParams(path.split('?')[1] ?? '').get('token');
     if (!token) return setError('El enlace está incompleto. Solicita uno nuevo desde «¿Olvidaste tu contraseña?».');
-    recover(token).then(() => navigate('/')).catch((e) => setError(e.message));
+    recover(token).then(() => navigate('/')).catch((e) => setError(friendlyError(e)));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

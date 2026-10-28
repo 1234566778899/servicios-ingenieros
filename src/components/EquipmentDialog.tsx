@@ -6,6 +6,7 @@ import {
 import { useCatalogs } from '../lib/catalogs';
 import { nextEquipmentCode } from '../lib/services';
 import type { ServiceEquipment } from '../lib/types';
+import { friendlyError } from '../lib/errors';
 
 const useStyles = makeStyles({
   // minmax(0, 1fr): sin esto el desplegable (ancho mínimo 250 px) ensanchaba la columna y aparecía scroll horizontal
@@ -61,7 +62,7 @@ export function EquipmentDialog({ open, title, initial, siteId, sitePrefix, sync
       }, !!syncLabel && sync);
       onClose();
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }

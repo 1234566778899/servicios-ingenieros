@@ -5,6 +5,7 @@ import {
 } from '@fluentui/react-components';
 import { useRouter } from '../lib/router';
 import { useNotify } from '../lib/toast';
+import { friendlyError } from '../lib/errors';
 
 const useStyles = makeStyles({
   header: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '12px 16px', marginBottom: '16px', flexWrap: 'wrap' },
@@ -108,7 +109,7 @@ export function ErrorBar({ error }: { error?: string | null }) {
   if (!error) return null;
   return (
     <MessageBar intent="error" style={{ marginBottom: 12 }}>
-      <MessageBarBody>{error}</MessageBarBody>
+      <MessageBarBody>{friendlyError(error)}</MessageBarBody>
     </MessageBar>
   );
 }

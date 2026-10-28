@@ -20,6 +20,7 @@ import { buildReportModel, type ReportModel } from '../../report/model';
 import { renderReportHtml } from '../../report/html';
 import { generateReport, openReportFile, printReportHtml, saveReportFile } from '../../report/generate';
 import type { StepProps } from './ServicioWizard';
+import { friendlyError } from '../../lib/errors';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '420px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
@@ -56,7 +57,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
     setModel(null);
     buildReportModel(bundle, tpl, issueDate, { ...cat, site }, (d, t) => live && setProgress(t ? d / t : 1))
       .then((m) => live && setModel(m))
-      .catch((e) => live && setError(e.message));
+      .catch((e) => live && setError(friendlyError(e)));
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tpl, issueDate, bundle]);
@@ -118,7 +119,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
       setResult(r.report);
       reload();
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e));
     } finally {
       setBusy(false);
     }

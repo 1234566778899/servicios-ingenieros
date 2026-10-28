@@ -18,6 +18,7 @@ import { StepHallazgos } from './StepHallazgos';
 import { StepTrabajos } from './StepTrabajos';
 import { StepCierre } from './StepCierre';
 import { StepInforme } from './StepInforme';
+import { friendlyError } from '../../lib/errors';
 
 export type StepKey = 'datos' | 'equipos' | 'checklist' | 'fotos' | 'hallazgos' | 'trabajos' | 'cierre' | 'informe';
 
@@ -79,7 +80,7 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
     try {
       setBundle(await loadServiceBundle(serviceId));
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e));
     }
   }, [serviceId]);
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DependencyList } from 'react';
+import { friendlyError } from './errors';
 
 export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList) {
   const [data, setData] = useState<T | undefined>();
@@ -18,7 +19,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: DependencyList) {
       const result = await run();
       if (id === lastRun.current) setData(result);
     } catch (e: any) {
-      if (id === lastRun.current) setError(e.message ?? String(e));
+      if (id === lastRun.current) setError(friendlyError(e));
     } finally {
       if (id === lastRun.current) setLoading(false);
     }
