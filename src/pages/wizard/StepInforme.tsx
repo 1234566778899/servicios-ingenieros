@@ -49,7 +49,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
   const [error, setError] = useState<string | null>(null);
 
   const tpl = cat.reportTemplates.find((t) => t.id === templateId);
-  const site = cat.sites.find((x) => x.id === svc.site_id);
+  const site = cat.allSites.find((x) => x.id === svc.site_id);
 
   useEffect(() => {
     if (!tpl) return;

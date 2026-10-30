@@ -10,6 +10,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { EquipmentRail } from '../../components/EquipmentRail';
 import { PhotoThumb } from '../../components/PhotoThumb';
 import { PhotoViewer } from '../../components/PhotoViewer';
+import { usePhotoDrag } from '../../components/photoDrag';
 import { useCatalogs } from '../../lib/catalogs';
 import { supabase, must } from '../../lib/supabase';
 import { logActivity, photoStagesDone, removePhotoFiles, savePhotoOrder, settleLimited, syncPhotoStatus, uploadPhoto } from '../../lib/services';
@@ -25,7 +26,7 @@ const useStyles = makeStyles({
   tiles: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr 1fr', gap: '8px' } },
   slot: {
     border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, padding: '6px',
-    display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: tokens.colorNeutralBackground1, minWidth: 0,
+    display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: tokens.colorNeutralBackground1, minWidth: 0, cursor: 'pointer',
   },
   add: {
     border: `1px dashed ${tokens.colorNeutralStroke1}`, borderRadius: tokens.borderRadiusMedium, minHeight: '150px',
@@ -35,7 +36,7 @@ const useStyles = makeStyles({
   },
   drop: { border: `2px dashed ${tokens.colorBrandStroke1}`, backgroundColor: tokens.colorBrandBackground2 },
   slotBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  thumbBtn: { padding: 0, border: 0, background: 'none', cursor: 'zoom-in', display: 'block', width: '100%' },
+  thumbBtn: { padding: 0, border: 0, background: 'none', cursor: 'inherit', display: 'block', width: '100%' },
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', gap: '8px', flexWrap: 'wrap' },
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', gap: '16px', flexWrap: 'wrap' },
 });
@@ -125,6 +126,11 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
     }
   };
 
+  const dnd = usePhotoDrag((id, stage, position) => {
+    const p = bundle.photos.find((x) => x.id === id);
+    if (p) move(p, stage as Stage, position);
+  }, !readOnly);
+
   const pick = (stage: Stage) => {
     target.current = stage;
     fileRef.current?.click();
@@ -167,7 +173,7 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
                 </div>
                 <div className={s.tiles}>
                   {list.map((p, i) => (
-                    <div key={p.id} className={s.slot}>
+                    <div key={p.id} className={s.slot} {...dnd.tile(p.id, st.id, i)}>
                       <button className={s.thumbBtn} onClick={() => setViewer(p)} aria-label={`Ver foto ${i + 1}`}>
                         <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
                       </button>
@@ -199,7 +205,12 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
                       onClick={() => pick(st.id)}
                       onDragOver={(e) => { e.preventDefault(); setDropOn(key); }}
                       onDragLeave={() => setDropOn(null)}
-                      onDrop={(e) => { e.preventDefault(); setDropOn(null); upload(st.id, [...e.dataTransfer.files]); }}>
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDropOn(null);
+                        if (dnd.isPhoto(e)) dnd.dropAtEnd(st.id, list.length);
+                        else upload(st.id, [...e.dataTransfer.files]);
+                      }}>
                       <Add24Regular />
                       <Text size={200}>Agregar fotos</Text>
                       <Caption1>o arrastra aquí (varias a la vez)</Caption1>
@@ -210,7 +221,8 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
             );
           })}
           <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
-            En el informe cada etapa se muestra en filas de 3 fotos (FOTO 1 · FOTO 2 · FOTO 3…). Formatos JPG/PNG · se comprimen al subir.
+            En el informe cada etapa se muestra en filas de 3 fotos (FOTO 1 · FOTO 2 · FOTO 3…). Arrastra una foto para cambiar su orden o pasarla a otra etapa.
+            Formatos JPG/PNG · se comprimen al subir.
           </Caption1>
         </Section>
       </div>

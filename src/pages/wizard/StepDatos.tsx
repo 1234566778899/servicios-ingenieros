@@ -80,7 +80,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
   const [conflict, setConflict] = useState<{ server: Service; fields: (keyof Form)[] } | null>(null);
   const [choice, setChoice] = useState<Record<string, 'mine' | 'cloud'>>({});
 
-  const site = cat.sites.find((x) => x.id === form.site_id);
+  const site = cat.allSites.find((x) => x.id === form.site_id);
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   // El recorrido sigue la especialidad elegida (un servicio que ya tiene equipos se queda con ellos)
   const equipmentMode = cat.hasEquipment(form.specialty) || (!!bundle?.equipment.length && withEquipment);

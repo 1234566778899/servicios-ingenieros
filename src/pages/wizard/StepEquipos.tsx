@@ -41,7 +41,7 @@ export function StepEquipos({ bundle, reload, patch, readOnly, goTo }: StepProps
   const { can } = useAuth();
   const notify = useNotify();
   const svc = bundle.service;
-  const site = cat.sites.find((x) => x.id === svc.site_id);
+  const site = cat.allSites.find((x) => x.id === svc.site_id);
   const canInventory = can('equipos.gestionar');
   const { data: inventory, reload: reloadInventory } = useAsync(() => loadSiteInventory(svc.site_id), [svc.site_id]);
   const inService = (e: SiteEquipment) => bundle.equipment.some((x) => x.site_equipment_id === e.id || x.code === e.code);

@@ -1,10 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { supabase, fetchAll } from './supabase';
 import type { CatalogOption, Client, EquipmentType, Profile, ReportTemplate, Site } from './types';
 
 interface Catalogs {
+  /** Solo los activos (los eliminados que tenían servicios quedan desactivados y no se listan) */
   clients: Client[];
   sites: Site[];
+  /** Incluye los desactivados: para mostrar los datos de servicios ya registrados */
+  allClients: Client[];
+  allSites: Site[];
   equipmentTypes: EquipmentType[];
   users: Profile[];
   reportTemplates: ReportTemplate[];
@@ -61,10 +65,13 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
   const by = <T extends { id: string }>(list: T[], key: keyof T) => (id?: string | null) =>
     (id && (list.find((x) => x.id === id)?.[key] as any)) || '—';
 
+  const activeClients = useMemo(() => clients.filter((c) => c.active !== false), [clients]);
+  const activeSites = useMemo(() => sites.filter((x) => x.active !== false), [sites]);
+
   return (
     <Ctx.Provider
       value={{
-        clients, sites, equipmentTypes, users, reportTemplates, serviceTypes, specialties, loading, error, reload,
+        clients: activeClients, sites: activeSites, allClients: clients, allSites: sites, equipmentTypes, users, reportTemplates, serviceTypes, specialties, loading, error, reload,
         clientName: by(clients, 'name'),
         siteName: by(sites, 'name'),
         typeName: by(equipmentTypes, 'name'),

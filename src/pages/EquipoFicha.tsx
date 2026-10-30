@@ -73,7 +73,7 @@ export function EquipoFicha({ code }: { code: string }) {
   const RES: Record<string, string> = { C: 'Conforme', NC: 'No conforme', NA: 'N.A.' };
   const counts = { C: 0, NC: 0 };
   for (const r of data.results) if (r.result === 'C' || r.result === 'NC') counts[r.result]++;
-  const site = cat.sites.find((x) => x.id === siteId);
+  const site = cat.allSites.find((x) => x.id === siteId);
 
   return (
     <>

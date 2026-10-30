@@ -62,6 +62,7 @@ export function Equipos() {
     () =>
       (data?.list ?? []).filter((e) =>
         (inactive || e.active) &&
+        !!siteOf(e.site_id) && // el inventario de sedes eliminadas no se muestra
         (!clientId || siteOf(e.site_id)?.client_id === clientId) &&
         (!siteId || e.site_id === siteId) &&
         (!type || e.equipment_type_id === type) &&

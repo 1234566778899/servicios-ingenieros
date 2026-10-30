@@ -469,11 +469,14 @@ function ClientsSites({ admin }: { admin: boolean }) {
   const [clientId, setClientId] = useState('');
   const [client, setClient] = useState<Partial<Client> | null>(null);
   const [site, setSite] = useState<Partial<Site> | null>(null);
+  const [toDelete, setToDelete] = useState<{ kind: 'client'; row: Client } | { kind: 'site'; row: Site } | null>(null);
   const [q, setQ] = useState('');
   const [page, setPage] = useState(0);
   const [size, setSize] = usePageSize('sedes', 25);
 
-  useEffect(() => { if (!clientId && cat.clients[0]) setClientId(cat.clients[0].id); }, [cat.clients, clientId]);
+  useEffect(() => {
+    if ((!clientId || !cat.clients.some((c) => c.id === clientId)) && cat.clients[0]) setClientId(cat.clients[0].id);
+  }, [cat.clients, clientId]);
   useEffect(() => { setQ(''); setPage(0); }, [clientId]);
   const current = cat.clients.find((c) => c.id === clientId);
 
@@ -489,8 +492,10 @@ function ClientsSites({ admin }: { admin: boolean }) {
     const ruc = client!.ruc?.trim() || null;
     if (ruc && !/^[0-9]{11}$/.test(ruc)) return notify('El RUC debe tener 11 dígitos', 'warning');
     const payload = { name: client!.name!.trim(), business_name: client!.business_name?.trim() || null, ruc };
-    const { data, error } = client!.id
-      ? await supabase.from('clients').update(payload).eq('id', client!.id).select('id').single()
+    // Un cliente eliminado (desactivado) con el mismo nombre se reactiva en lugar de chocar con el nombre único
+    const id = client!.id ?? cat.allClients.find((c) => !c.active && c.name === payload.name)?.id;
+    const { data, error } = id
+      ? await supabase.from('clients').update({ ...payload, active: true }).eq('id', id).select('id').single()
       : await supabase.from('clients').insert(payload).select('id').single();
     if (error) return notify('No se pudo guardar', 'error', error.message);
     setClient(null);
@@ -505,7 +510,9 @@ function ClientsSites({ admin }: { admin: boolean }) {
       ...row, client_id: clientId, equipment_prefix: row.equipment_prefix?.toUpperCase() || null,
       code: row.code?.trim() || null, district: row.district?.trim().toUpperCase() || null, province: row.province?.trim().toUpperCase() || null,
     };
-    const res = id ? await supabase.from('sites').update(payload).eq('id', id) : await supabase.from('sites').insert(payload);
+    // Igual que con los clientes: una sede eliminada con el mismo nombre se reactiva
+    const target = id ?? cat.allSites.find((x) => !x.active && x.client_id === clientId && x.name === payload.name?.trim())?.id;
+    const res = target ? await supabase.from('sites').update({ ...payload, active: true }).eq('id', target) : await supabase.from('sites').insert(payload);
     if (res.error) return notify('No se pudo guardar', 'error', res.error.message);
     notify('Sede guardada');
     setSite(null);
@@ -527,6 +534,7 @@ function ClientsSites({ admin }: { admin: boolean }) {
         actions={admin && clientId && (
           <>
             <Button icon={<Edit20Regular />} onClick={() => setClient(current!)}>Editar cliente</Button>
+            <Button icon={<Delete20Regular />} onClick={() => setToDelete({ kind: 'client', row: current! })}>Eliminar</Button>
             <Button appearance="primary" icon={<Add20Regular />} onClick={() => setSite({})}>Nueva sede</Button>
           </>
         )}>
@@ -545,7 +553,7 @@ function ClientsSites({ admin }: { admin: boolean }) {
               <TableHeaderCell>Distrito / provincia</TableHeaderCell>
               <TableHeaderCell>Prefijo de equipos</TableHeaderCell>
               <TableHeaderCell>Contacto</TableHeaderCell>
-              {admin && <TableHeaderCell style={{ width: 70 }} />}
+              {admin && <TableHeaderCell style={{ width: 130 }} />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -557,7 +565,13 @@ function ClientsSites({ admin }: { admin: boolean }) {
                 <TableCell><Caption1>{[x.district, x.province].filter(Boolean).join(' · ') || '—'}</Caption1></TableCell>
                 <TableCell>{x.equipment_prefix ?? '—'}</TableCell>
                 <TableCell>{x.contact_name ?? '—'}</TableCell>
-                {admin && <TableCell><Link onClick={() => setSite(x)}>Editar</Link></TableCell>}
+                {admin && (
+                  <TableCell>
+                    <Link onClick={() => setSite(x)}>Editar</Link>
+                    {' · '}
+                    <Link onClick={() => setToDelete({ kind: 'site', row: x })}>Eliminar</Link>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -619,6 +633,21 @@ function ClientsSites({ admin }: { admin: boolean }) {
           </DialogBody>
         </DialogSurface>
       </Dialog>
+      <ConfirmDialog open={!!toDelete} danger confirmLabel="Eliminar"
+        title={toDelete?.kind === 'client' ? `¿Eliminar el cliente ${toDelete.row.name}?` : `¿Eliminar la sede ${toDelete?.row.name}?`}
+        body={toDelete?.kind === 'client'
+          ? 'Se eliminará junto con sus sedes y su inventario de equipos. Si ya tiene servicios registrados, solo se desactivará: dejará de aparecer en las listas, pero sus servicios e informes se conservan.'
+          : 'Se eliminará junto con su inventario de equipos. Si ya tiene servicios registrados, solo se desactivará: dejará de aparecer en las listas, pero sus servicios e informes se conservan.'}
+        onCancel={() => setToDelete(null)}
+        onConfirm={async () => {
+          const d = toDelete!;
+          const res = await supabase.rpc(d.kind === 'client' ? 'delete_client' : 'delete_site', { p_id: d.row.id });
+          if (res.error) throw res.error;
+          const noun = d.kind === 'client' ? 'Cliente' : 'Sede';
+          notify(res.data === 'disabled' ? `${noun} desactivad${d.kind === 'client' ? 'o' : 'a'}: tiene servicios registrados` : `${noun} eliminad${d.kind === 'client' ? 'o' : 'a'}`);
+          setToDelete(null);
+          await cat.reload();
+        }} />
     </div>
   );
 }

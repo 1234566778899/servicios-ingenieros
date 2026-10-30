@@ -19,11 +19,11 @@ export interface Profile {
 }
 
 /** Cliente = marca (UPN, BBVA…); la razón social y el RUC son de quien contrata el servicio. */
-export interface Client { id: string; name: string; business_name: string | null; ruc: string | null }
+export interface Client { id: string; name: string; business_name: string | null; ruc: string | null; active: boolean }
 export interface Site {
   id: string; client_id: string; name: string; short_name: string | null;
   address: string | null; equipment_prefix: string | null; contact_name: string | null;
-  code: string | null; district: string | null; province: string | null;
+  code: string | null; district: string | null; province: string | null; active: boolean;
 }
 export interface EquipmentType { id: string; name: string; default_unit: string | null }
 /** Opción de catálogo simple: tipos de servicio y especialidades */

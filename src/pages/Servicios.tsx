@@ -70,15 +70,15 @@ export function Servicios() {
       const t = q.trim().replace(/[,()%]/g, ' ');
       const ors = [`code.ilike.%${t}%`, `work_order.ilike.%${t}%`];
       const lt = t.toLowerCase();
-      const cIds = cat.clients.filter((c) => c.name.toLowerCase().includes(lt)).map((c) => c.id);
-      const sIds = cat.sites.filter((x) => x.name.toLowerCase().includes(lt)).map((x) => x.id);
+      const cIds = cat.allClients.filter((c) => c.name.toLowerCase().includes(lt)).map((c) => c.id);
+      const sIds = cat.allSites.filter((x) => x.name.toLowerCase().includes(lt)).map((x) => x.id);
       if (cIds.length) ors.push(`client_id.in.(${cIds.join(',')})`);
       if (sIds.length) ors.push(`site_id.in.(${sIds.join(',')})`);
       query = query.or(ors.join(','));
     }
     const res = await query;
     return { rows: must(res) as Row[], total: res.count ?? 0 };
-  }, [q, clientId, siteId, type, status, from, to, page, size, cat.clients, cat.sites]);
+  }, [q, clientId, siteId, type, status, from, to, page, size, cat.allClients, cat.allSites]);
 
   const sites = useMemo(() => cat.sites.filter((x) => !clientId || x.client_id === clientId), [cat.sites, clientId]);
   const total = data?.total ?? 0;

@@ -58,7 +58,7 @@ export function ServicioDetalle({ id }: { id: string }) {
   if (!data) return <ErrorBar error={error ?? 'Servicio no encontrado o sin permiso para verlo.'} />;
 
   const svc = data.service;
-  const site = cat.sites.find((x) => x.id === svc.site_id);
+  const site = cat.allSites.find((x) => x.id === svc.site_id);
   const withEquipment = usesEquipment(data, cat.hasEquipment);
   const groups = [...data.photoGroups].sort((a, b) => a.position - b.position);
   const groupPhotos = (id: string) => data.photos.filter((p) => p.group_id === id).sort((a, b) => a.position - b.position);

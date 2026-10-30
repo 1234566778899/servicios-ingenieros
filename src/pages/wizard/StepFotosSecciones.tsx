@@ -11,6 +11,7 @@ import { ConceptInput, invalidateConcepts } from '../../components/Concepts';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { PhotoThumb } from '../../components/PhotoThumb';
 import { PhotoViewer } from '../../components/PhotoViewer';
+import { usePhotoDrag } from '../../components/photoDrag';
 import { supabase, must } from '../../lib/supabase';
 import { logActivity, rememberConcepts, removePhotoFiles, savePhotoOrder, settleLimited, syncPhotoStatus, uploadPhoto } from '../../lib/services';
 import { useNotify } from '../../lib/toast';
@@ -23,7 +24,7 @@ const useStyles = makeStyles({
   tiles: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr 1fr', gap: '8px' } },
   slot: {
     border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, padding: '6px',
-    display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: tokens.colorNeutralBackground1, minWidth: 0,
+    display: 'flex', flexDirection: 'column', gap: '4px', backgroundColor: tokens.colorNeutralBackground1, minWidth: 0, cursor: 'pointer',
   },
   add: {
     border: `1px dashed ${tokens.colorNeutralStroke1}`, borderRadius: tokens.borderRadiusMedium, minHeight: '150px',
@@ -33,7 +34,7 @@ const useStyles = makeStyles({
   },
   drop: { border: `2px dashed ${tokens.colorBrandStroke1}`, backgroundColor: tokens.colorBrandBackground2 },
   slotBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  thumbBtn: { padding: 0, border: 0, background: 'none', cursor: 'zoom-in', display: 'block', width: '100%' },
+  thumbBtn: { padding: 0, border: 0, background: 'none', cursor: 'inherit', display: 'block', width: '100%' },
   newGroup: { display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' },
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', gap: '8px', flexWrap: 'wrap' },
 });
@@ -193,6 +194,11 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
     }
   };
 
+  const dnd = usePhotoDrag((id, groupId, position) => {
+    const p = bundle.photos.find((x) => x.id === id);
+    if (p) move(p, groupId, position);
+  }, !readOnly);
+
   /** Desaparece al instante; el borrado en la nube sigue por detrás. */
   const remove = async () => {
     const p = toDelete!;
@@ -249,7 +255,7 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
               {uploading === g.id && <Spinner size="tiny" label={`Subiendo ${Math.min(progress.done + 1, progress.total)} de ${progress.total}…`} style={{ marginBottom: 8 }} />}
               <div className={s.tiles}>
                 {list.map((p, i) => (
-                  <div key={p.id} className={s.slot}>
+                  <div key={p.id} className={s.slot} {...dnd.tile(p.id, g.id, i)}>
                     <button className={s.thumbBtn} onClick={() => setViewer(p)} aria-label={`Ver foto ${i + 1}`}>
                       <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
                     </button>
@@ -281,7 +287,12 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
                     onClick={() => { target.current = g.id; fileRef.current?.click(); }}
                     onDragOver={(e) => { e.preventDefault(); setDropOn(g.id); }}
                     onDragLeave={() => setDropOn(null)}
-                    onDrop={(e) => { e.preventDefault(); setDropOn(null); upload(g.id, [...e.dataTransfer.files]); }}>
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDropOn(null);
+                      if (dnd.isPhoto(e)) dnd.dropAtEnd(g.id, list.length);
+                      else upload(g.id, [...e.dataTransfer.files]);
+                    }}>
                     <Add24Regular />
                     <Text size={200}>Agregar fotos</Text>
                     <Caption1>o arrastra aquí (varias a la vez)</Caption1>
