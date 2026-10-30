@@ -73,6 +73,9 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
         },
   );
   const [siteQuery, setSiteQuery] = useState(() => (form.site_id ? cat.siteName(form.site_id) : ''));
+  // Sede elegida al instante: al cerrar la lista (que llega junto con la selección) `form` aún tiene el valor anterior
+  const siteIdRef = useRef(form.site_id);
+  siteIdRef.current = form.site_id;
   const [autoTitle, setAutoTitle] = useState(!svc?.cover_title);
   const [autoDesc, setAutoDesc] = useState(!svc?.description);
   const [nextCode, setNextCode] = useState('');
@@ -287,8 +290,13 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                 <Combobox placeholder={form.client_id ? `Busca entre ${sites.length} sedes` : 'Elige un cliente'} disabled={!form.client_id}
                   value={siteQuery} selectedOptions={[form.site_id]}
                   onChange={(e) => setSiteQuery(e.target.value)}
-                  onOpenChange={(_, d) => { if (!d.open) setSiteQuery(form.site_id ? cat.siteName(form.site_id) : ''); }}
-                  onOptionSelect={(_, d) => { if (d.optionValue) { set('site_id', d.optionValue); setSiteQuery(cat.siteName(d.optionValue)); } }}>
+                  onOpenChange={(_, d) => { if (!d.open) setSiteQuery(siteIdRef.current ? cat.siteName(siteIdRef.current) : ''); }}
+                  onOptionSelect={(_, d) => {
+                    if (!d.optionValue) return;
+                    siteIdRef.current = d.optionValue;
+                    set('site_id', d.optionValue);
+                    setSiteQuery(cat.siteName(d.optionValue));
+                  }}>
                   {siteMatches.map((x) => (
                     <Option key={x.id} value={x.id} text={x.name}>
                       {x.name}{(x.district || x.province) && <Caption1 style={{ marginLeft: 6, color: tokens.colorNeutralForeground3 }}>{x.district ?? x.province}</Caption1>}
