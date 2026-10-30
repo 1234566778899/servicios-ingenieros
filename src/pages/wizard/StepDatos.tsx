@@ -257,10 +257,16 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
   const techs = cat.users.filter((u) => u.active);
   const sites = cat.sites.filter((x) => x.client_id === form.client_id);
   // Hay clientes con cientos de sedes: se busca por nombre, código, distrito o dirección
+  // Si el texto es el de la sede ya elegida se muestran todas (con la elegida primero) para poder cambiarla sin borrar
+  const showingCurrent = !!form.site_id && siteQuery === cat.siteName(form.site_id);
   const siteMatches = useMemo(() => {
+    if (showingCurrent) {
+      const current = sites.find((x) => x.id === form.site_id);
+      return [...(current ? [current] : []), ...sites.filter((x) => x.id !== form.site_id)].slice(0, 50);
+    }
     const words = fold(siteQuery).split(' ').filter(Boolean);
     return sites.filter((x) => words.every((w) => fold(`${x.name} ${x.code ?? ''} ${x.district ?? ''} ${x.province ?? ''} ${x.address ?? ''}`).includes(w))).slice(0, 50);
-  }, [sites, siteQuery]);
+  }, [sites, siteQuery, showingCurrent, form.site_id]);
 
   return (
     <>
@@ -289,6 +295,12 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
               <Field label="Tienda / Sede" required>
                 <Combobox placeholder={form.client_id ? `Busca entre ${sites.length} sedes` : 'Elige un cliente'} disabled={!form.client_id}
                   value={siteQuery} selectedOptions={[form.site_id]}
+                  // Con una sede elegida, entrar al campo selecciona su nombre: lo que se escriba lo reemplaza
+                  // (también en el clic: el mouseup del navegador deshace la selección hecha en el foco)
+                  input={{
+                    onFocus: (e) => showingCurrent && e.target.select(),
+                    onClick: (e) => showingCurrent && e.currentTarget.select(),
+                  }}
                   onChange={(e) => setSiteQuery(e.target.value)}
                   onOpenChange={(_, d) => { if (!d.open) setSiteQuery(siteIdRef.current ? cat.siteName(siteIdRef.current) : ''); }}
                   onOptionSelect={(_, d) => {
