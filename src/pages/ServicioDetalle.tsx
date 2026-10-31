@@ -7,6 +7,7 @@ import {
 import { ArrowDownload20Regular, DocumentArrowRight20Regular, Edit20Regular, Image20Regular, Open20Regular } from '@fluentui/react-icons';
 import { PageHeader, Section, StatusBadge, Loading, ErrorBar } from '../components/common';
 import { PhotoThumb } from '../components/PhotoThumb';
+import { PhotoLightbox } from '../components/PhotoLightbox';
 import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
@@ -17,7 +18,7 @@ import { useServicePresence } from '../lib/presence';
 import { fmtDate, fmtDateTime, fmtSize } from '../lib/format';
 import { useNotify } from '../lib/toast';
 import { openReportFile, saveReportFile } from '../report/generate';
-import { STAGES, type Report } from '../lib/types';
+import { STAGES, type Photo, type Report } from '../lib/types';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
@@ -25,6 +26,10 @@ const useStyles = makeStyles({
   kv: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 24px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' }, '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
   photos: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' },
   gallery: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' },
+  thumb: {
+    display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', cursor: 'zoom-in', borderRadius: tokens.borderRadiusMedium,
+    ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '2px' },
+  },
   log: { display: 'flex', gap: '10px', alignItems: 'center', padding: '6px 0' },
   tabs: { marginBottom: '16px' },
 });
@@ -46,6 +51,7 @@ export function ServicioDetalle({ id }: { id: string }) {
   const notify = useNotify();
   const [tab, setTab] = useState('resumen');
   const [denied, setDenied] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<{ photos: Photo[]; index: number; label: (p: Photo) => string } | null>(null);
 
   const { data, error, loading } = useAsync(async () => {
     const bundle = await loadServiceBundle(id);
@@ -221,9 +227,11 @@ export function ServicioDetalle({ id }: { id: string }) {
           {groups.map((g) => (
             <Section key={g.id} title={g.title} subtitle={`${groupPhotos(g.id).length} fotos${g.description ? ` · ${g.description}` : ''}`}>
               <div className={s.gallery}>
-                {groupPhotos(g.id).map((p) => (
+                {groupPhotos(g.id).map((p, i, list) => (
                   <div key={p.id}>
-                    <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
+                    <button type="button" className={s.thumb} aria-label="Ver foto completa" onClick={() => setViewer({ photos: list, index: i, label: () => g.title })}>
+                      <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
+                    </button>
                     <Caption1 block>{p.caption}</Caption1>
                   </div>
                 ))}
@@ -241,9 +249,12 @@ export function ServicioDetalle({ id }: { id: string }) {
               <div className={s.gallery}>
                 {data.photos.filter((p) => p.service_equipment_id === e.id)
                   .sort((a, b) => STAGES.findIndex((x) => x.id === a.stage) - STAGES.findIndex((x) => x.id === b.stage) || a.position - b.position)
-                  .map((p) => (
+                  .map((p, i, list) => (
                     <div key={p.id}>
-                      <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
+                      <button type="button" className={s.thumb} aria-label="Ver foto completa"
+                        onClick={() => setViewer({ photos: list, index: i, label: (x) => `${e.code} · ${STAGES.find((st) => st.id === x.stage)?.label ?? ''}` })}>
+                        <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
+                      </button>
                       <Caption1 block>{STAGES.find((x) => x.id === p.stage)?.label}{p.caption ? ` · ${p.caption}` : ''}</Caption1>
                     </div>
                   ))}
@@ -251,6 +262,11 @@ export function ServicioDetalle({ id }: { id: string }) {
             </Section>
           ))}
         </div>
+      )}
+
+      {viewer && (
+        <PhotoLightbox photos={viewer.photos} index={viewer.index} label={viewer.label}
+          onIndex={(index) => setViewer({ ...viewer, index })} onClose={() => setViewer(null)} />
       )}
 
       {tab === 'informes' && (
