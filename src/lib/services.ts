@@ -212,6 +212,12 @@ export async function savePhotoOrder(before: Photo[], changes: Photo[]) {
   if (error) throw new Error(error.message);
 }
 
+/** Tamaño de la foto en el informe (1 = automático) */
+export async function savePhotoScale(id: string, scale: number) {
+  const { error } = await supabase.from('photos').update({ scale }).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
 /** Borra fotos del bucket junto con sus miniaturas. */
 export async function removePhotoFiles(paths: string[]) {
   if (paths.length) await supabase.storage.from('photos').remove([...paths, ...paths.map(thumbPath)]);

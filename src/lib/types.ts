@@ -71,6 +71,8 @@ export interface Photo {
   /** Comentario que aparece debajo de la foto en el informe */
   caption: string | null;
   annotations: Annotation[];
+  /** Tamaño en el informe respecto del automático (1 = 100 %) */
+  scale: number;
 }
 export interface PhotoGroup { id: string; service_id: string; position: number; title: string; description: string | null }
 

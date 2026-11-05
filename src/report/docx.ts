@@ -3,7 +3,7 @@ import {
   TableRow, TextRun, VerticalAlign, WidthType,
 } from 'docx';
 import { siteAddress } from '../lib/format';
-import { rowLayout, type ReportImage, type ReportModel } from './model';
+import { fitImage, scaledRow, type ReportImage, type ReportModel } from './model';
 import logoDataUrl from '../assets/logo.png?inline';
 
 // Logo 400×113 px embebido en el bundle
@@ -80,11 +80,9 @@ function headerTable(m: ReportModel) {
   });
 }
 
-/** Ajusta la foto a una caja (170×125 px por defecto) conservando la proporción. */
-function img(i: ReportImage, boxW = 170, boxH = 125) {
-  const scale = Math.min(boxW / i.width, boxH / i.height);
-  return new ImageRun({ type: 'jpg', data: i.bytes, transformation: { width: Math.round(i.width * scale), height: Math.round(i.height * scale) } });
-}
+/** Foto de w × h px */
+const img = (i: ReportImage, { w, h }: { w: number; h: number }) =>
+  new ImageRun({ type: 'jpg', data: i.bytes, transformation: { width: Math.round(w), height: Math.round(h) } });
 
 function coverParagraphs(m: ReportModel) {
   return [
@@ -110,10 +108,11 @@ function memoriaBlocks(m: ReportModel, n: number, pageBreakBefore: boolean) {
 
 const bullets = (xs: string[]) => xs.map((d) => p(`•  ${d}`));
 
-/** Celda de foto: la imagen (con sus figuras) y, si lo hay, el comentario debajo */
-const photoCell = (im: ReportImage | null, width: number, box: [number, number], empty = '') => cell(im
+/** Celda de foto de un equipo: la imagen (con sus figuras) y, si lo hay, el comentario debajo.
+ *  Caja de 170 × 125 px a escala 1; al agrandarla el tope es el ancho de la celda (~190 px). */
+const photoCell = (im: ReportImage | null, width: number, empty = '') => cell(im
   ? [
-      new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, ...box)] }),
+      new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, fitImage(im, 170, 125, 190))] }),
       ...(im.caption ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] })] : []),
     ]
   : [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: empty, font: 'Arial' })] })], { width });
@@ -127,8 +126,8 @@ const noBorders = { top: NONE, bottom: NONE, left: NONE, right: NONE };
 const PX = 15; // twips por px
 const PAD = 60; // margen izquierdo/derecho de cada celda, en twips
 const photoRow = (row: ReportImage[]) => {
-  const { height, widths } = rowLayout(row, CONTENT / PX, (PAD * 2) / PX, 250);
-  const cols = widths.map((w) => Math.floor(w * PX + PAD * 2));
+  const boxes = scaledRow(row, CONTENT / PX, (PAD * 2) / PX, 250);
+  const cols = boxes.map((b) => Math.floor(b.w * PX + PAD * 2));
   return [
     new Table({
       alignment: AlignmentType.CENTER,
@@ -143,7 +142,7 @@ const photoRow = (row: ReportImage[]) => {
           width: { size: cols[i], type: WidthType.DXA },
           margins: { top: 0, bottom: 0, left: PAD, right: PAD },
           children: [
-            new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, widths[i], height)] }),
+            new Paragraph({ alignment: AlignmentType.CENTER, children: [img(im, fitImage({ ...im, scale: 1 }, boxes[i].w, boxes[i].h))] }),
             ...(im.caption ? [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: im.caption, size: 14, color: '444444', font: 'Arial' })] })] : []),
           ],
         })),
@@ -261,7 +260,7 @@ function equipmentBody(m: ReportModel) {
             cantSplit: true,
             children: [
               ...(ri === 0 ? [cell(st.stage, { shade: 'F3F3F3', width: 10, rowSpan: st.rows.length })] : []),
-              ...row.map((im) => photoCell(im, 30, [170, 125], '—')),
+              ...row.map((im) => photoCell(im, 30, '—')),
             ],
           }))),
         ],

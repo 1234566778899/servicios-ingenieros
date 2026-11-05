@@ -5,8 +5,12 @@ import { fmtDate } from '../lib/format';
 import { STAGES, type Photo, type ReportTemplate, type Site } from '../lib/types';
 import { renderAnnotated, type Annotation } from '../lib/annotations';
 
-/** caption = comentario del usuario (vacío si no escribió nada) */
-export interface ReportImage { bytes: Uint8Array; dataUrl: string; width: number; height: number; caption: string }
+/** caption = comentario del usuario (vacío si no escribió nada); scale = tamaño elegido en la vista previa (1 = automático) */
+export interface ReportImage { id: string; bytes: Uint8Array; dataUrl: string; width: number; height: number; caption: string; scale: number }
+
+export const MIN_SCALE = 0.3;
+export const MAX_SCALE = 2.5;
+export const clampScale = (s: number) => Math.round(Math.min(MAX_SCALE, Math.max(MIN_SCALE, s)) * 100) / 100;
 
 export interface ReportModel {
   /** false: servicio sin equipos (trabajos realizados + fotos por sección + observaciones) */
@@ -55,7 +59,36 @@ export function rowLayout(row: ReportImage[], width: number, gap: number, maxHei
   return { height, widths: ratios.map((r) => r * height) };
 }
 
-type Loaded = Omit<ReportImage, 'caption'>;
+/** Fila con el tamaño de cada foto: parte de `rowLayout` y aplica su escala; si la fila ya no entra en el ancho,
+ *  se reduce entera. Devuelve la caja (ancho y alto) de cada foto, en las mismas unidades que `width`. */
+export function scaledRow(row: ReportImage[], width: number, gap: number, maxHeight: number) {
+  const { height, widths } = rowLayout(row, width, gap, maxHeight);
+  const boxes = row.map((im, i) => ({ w: widths[i] * im.scale, h: height * im.scale }));
+  const free = width - gap * (row.length - 1);
+  const total = boxes.reduce((a, b) => a + b.w, 0);
+  const k = total > free ? free / total : 1;
+  return boxes.map((b) => ({ w: b.w * k, h: b.h * k }));
+}
+
+/** Foto ajustada a la caja (boxW × boxH) conservando la proporción, por su escala y sin pasar de maxW de ancho */
+export function fitImage(im: ReportImage, boxW: number, boxH: number, maxW = boxW) {
+  let f = Math.min(boxW / im.width, boxH / im.height) * im.scale;
+  if (im.width * f > maxW) f = maxW / im.width;
+  return { w: im.width * f, h: im.height * f };
+}
+
+/** Copia del modelo con otras escalas (las que se acaban de cambiar en la vista previa, sin volver a descargar fotos) */
+export function withScales(m: ReportModel, scales: Record<string, number>): ReportModel {
+  if (!Object.keys(scales).length) return m;
+  const sc = <T extends ReportImage | null>(im: T): T => (im && scales[im.id] !== undefined ? { ...im, scale: scales[im.id] } : im);
+  return {
+    ...m,
+    equipment: m.equipment.map((e) => ({ ...e, photos: e.photos.map((st) => ({ ...st, rows: st.rows.map((r) => r.map(sc)) })) })),
+    photoGroups: m.photoGroups.map((g) => ({ ...g, rows: g.rows.map((r) => r.map(sc)) })),
+  };
+}
+
+type Loaded = Omit<ReportImage, 'caption' | 'id' | 'scale'>;
 // Las fotos ya descargadas se reutilizan: cambiar la fecha o la plantilla, o recargar tras generar, vuelve a armar el modelo
 const imageCache = new Map<string, Promise<Loaded>>();
 // Pocas descargas a la vez: un servicio con 100 fotos no las pide (ni decodifica) todas juntas
@@ -102,7 +135,9 @@ async function withAnnotations(img: Loaded, annotations: Annotation[]): Promise<
   return { bytes: new Uint8Array(await blob.arrayBuffer()), dataUrl, width: canvas.width, height: canvas.height };
 }
 
-async function loadImage(path: string, caption: string, annotations: Annotation[]): Promise<ReportImage | null> {
+async function loadImage(p: Photo): Promise<ReportImage | null> {
+  const path = p.storage_path;
+  const annotations = p.annotations ?? [];
   let hit = imageCache.get(path);
   if (!hit) {
     hit = limited(() => fetchImage(path));
@@ -114,7 +149,10 @@ async function loadImage(path: string, caption: string, annotations: Annotation[
   }
   try {
     const img = await hit;
-    return { ...(annotations.length ? await withAnnotations(img, annotations) : img), caption };
+    return {
+      ...(annotations.length ? await withAnnotations(img, annotations) : img),
+      id: p.id, caption: p.caption?.trim() ?? '', scale: Number(p.scale ?? 1) || 1,
+    };
   } catch {
     return null;
   }
@@ -139,7 +177,7 @@ export async function buildReportModel(
   const total = b.photos.length;
   const withEquipment = usesEquipment(b, names.hasEquipment);
   const image = async (p: Photo) => {
-    const img = await loadImage(p.storage_path, p.caption?.trim() ?? '', p.annotations ?? []);
+    const img = await loadImage(p);
     if (!img) failedPhotos++;
     onProgress?.(++done, total);
     return img;

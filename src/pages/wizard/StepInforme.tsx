@@ -14,9 +14,10 @@ import { useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
 import { today, fmtSize } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
-import { photoStagesDone } from '../../lib/services';
+import { photoStagesDone, savePhotoScale } from '../../lib/services';
 import type { Report } from '../../lib/types';
-import { buildReportModel, type ReportModel } from '../../report/model';
+import { buildReportModel, withScales, type ReportModel } from '../../report/model';
+import { ReportPreview } from '../../components/ReportPreview';
 import { renderReportHtml } from '../../report/html';
 import { generateReport, openReportFile, printReportHtml, saveReportFile } from '../../report/generate';
 import type { StepProps } from './ServicioWizard';
@@ -42,7 +43,10 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
   const [templateId, setTemplateId] = useState(svc.report_template_id ?? cat.reportTemplates[0]?.id ?? '');
   const [issueDate, setIssueDate] = useState(today());
   const canWord = can('informes.word');
-  const [model, setModel] = useState<ReportModel | null>(null);
+  const [baseModel, setModel] = useState<ReportModel | null>(null);
+  /** Tamaños de foto cambiados en la vista previa (id → escala), sin volver a armar el modelo */
+  const [scales, setScales] = useState<Record<string, number>>({});
+  const model = useMemo(() => (baseModel ? withScales(baseModel, scales) : null), [baseModel, scales]);
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Report | null>(null);
@@ -110,6 +114,20 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
     ['conclusiones', 'Conclusiones y recomendaciones', `${model?.conclusions.length ?? 0} conclusiones · ${model?.recommendations.length ?? 0} recomendaciones`],
   ];
 
+  const changeScale = async (id: string, scale: number) => {
+    const photo = bundle.photos.find((p) => p.id === id);
+    const before = photo?.scale ?? 1;
+    setScales((x) => ({ ...x, [id]: scale }));
+    try {
+      await savePhotoScale(id, scale);
+      // Así se conserva al volver a este paso sin recargar el servicio
+      if (photo) photo.scale = scale;
+    } catch (e: any) {
+      setScales((x) => ({ ...x, [id]: before }));
+      notify('No se pudo guardar el tamaño de la foto', 'error', friendlyError(e));
+    }
+  };
+
   const generate = async () => {
     if (!model || !tpl) return;
     setBusy(true);
@@ -174,7 +192,8 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
             </MessageBar>
           </Section>
         </div>
-        <Section title="Vista previa" subtitle={model ? `${pages} páginas` : ''}>
+        <Section title="Vista previa"
+          subtitle={model ? `${pages} páginas${!readOnly && bundle.photos.length ? ' · Arrastra la esquina de una foto para cambiar su tamaño (doble clic: automático)' : ''}` : ''}>
           {!model && !error && (
             <div style={{ padding: 32 }}>
               <Spinner label="Preparando vista previa…" />
@@ -182,7 +201,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
             </div>
           )}
           {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-          {model && <iframe className={s.preview} title="Vista previa del informe" srcDoc={html} sandbox="" />}
+          {model && <ReportPreview className={s.preview} html={html} editable={!readOnly} onScale={changeScale} />}
         </Section>
       </div>
       <div className={s.footer}>
