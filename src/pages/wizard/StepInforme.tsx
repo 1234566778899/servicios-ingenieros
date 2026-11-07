@@ -54,12 +54,17 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
 
   const tpl = cat.reportTemplates.find((t) => t.id === templateId);
   const site = cat.allSites.find((x) => x.id === svc.site_id);
+  // En el informe va la razón social (quien contrata el servicio), no la marca: ADIDAS → CUSHMAN Y WAKEFIELD PERU S.A.
+  const clientName = (id?: string | null) => {
+    const c = cat.allClients.find((x) => x.id === id);
+    return c?.business_name?.trim() || cat.clientName(id);
+  };
 
   useEffect(() => {
     if (!tpl) return;
     let live = true;
     setModel(null);
-    buildReportModel(bundle, tpl, issueDate, { ...cat, site }, (d, t) => live && setProgress(t ? d / t : 1))
+    buildReportModel(bundle, tpl, issueDate, { ...cat, clientName, site },(d, t) => live && setProgress(t ? d / t : 1))
       .then((m) => live && setModel(m))
       .catch((e) => live && setError(friendlyError(e)));
     return () => { live = false; };
