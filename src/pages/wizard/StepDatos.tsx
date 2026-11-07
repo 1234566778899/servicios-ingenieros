@@ -16,9 +16,12 @@ import { addInventoryToService, loadSiteInventory, logActivity, rememberConcepts
 import { coverTitle, memoria, equipmentSummary, noDashes, swapSite, DEFAULT_PREV_DETAILS } from '../../lib/texts';
 import { fmtDateTime, fold, siteAddress, today } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
-import type { Service } from '../../lib/types';
+import type { Service, Site } from '../../lib/types';
 import type { SaveHandler, StepProps } from './ServicioWizard';
 import { friendlyError } from '../../lib/errors';
+
+/** Opción «agregar tienda» de la lista de sedes */
+const NEW_SITE = '__nueva_sede__';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
@@ -57,7 +60,12 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
 }) {
   const s = useStyles();
   const cat = useCatalogs();
-  const { profile } = useAuth();
+  const { profile, can } = useAuth();
+  // Agregar una tienda que no está en la lista: administrador y coordinador (no el técnico)
+  const canAddSite = !readOnly && (can('sedes.agregar') || can('catalogos.admin'));
+  const [newSite, setNewSite] = useState<{ name: string; code: string; address: string; district: string; province: string } | null>(null);
+  const [savingSite, setSavingSite] = useState(false);
+  const [siteError, setSiteError] = useState<string | null>(null);
   const { navigate } = useRouter();
   const notify = useNotify();
   const svc = bundle?.service;
@@ -285,6 +293,34 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
     return sites.filter((x) => words.every((w) => fold(`${siteLabel(x.id)} ${(x.code ?? '').replace(/\s/g, '')} ${x.district ?? ''} ${x.province ?? ''} ${x.address ?? ''}`).includes(w))).slice(0, 50);
   }, [sites, siteQuery, showingCurrent, form.site_id]);
 
+
+  /** Crea la tienda (o devuelve la que ya existía con ese nombre), recarga los catálogos y la deja elegida */
+  const addSite = async () => {
+    if (!newSite) return;
+    setSavingSite(true);
+    setSiteError(null);
+    try {
+      const { data, error: e } = await supabase.rpc('create_site', {
+        p_client: form.client_id, p_name: newSite.name, p_code: newSite.code || null, p_address: newSite.address || null,
+        p_district: newSite.district || null, p_province: newSite.province || null,
+      });
+      if (e) throw new Error(e.message);
+      const created = data as Site;
+      await cat.reload();
+      const prev = cat.allSites.find((x) => x.id === siteIdRef.current);
+      if (!autoTitle) set('cover_title', swapSite(form.cover_title, prev, created));
+      if (!autoDesc) set('description', swapSite(form.description, prev, created));
+      siteIdRef.current = created.id;
+      set('site_id', created.id);
+      setSiteQuery(created.code?.trim() ? `${created.code.trim()} - ${created.name}` : created.name);
+      setNewSite(null);
+      notify(`Tienda «${created.name}» agregada`, 'success');
+    } catch (e: any) {
+      setSiteError(friendlyError(e));
+    } finally {
+      setSavingSite(false);
+    }
+  };
   return (
     <>
       <ErrorBar error={error} />
@@ -322,6 +358,15 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                   onOpenChange={(_, d) => { if (!d.open) setSiteQuery(siteIdRef.current ? siteLabel(siteIdRef.current) : ''); }}
                   onOptionSelect={(_, d) => {
                     if (!d.optionValue) return;
+                    if (d.optionValue === NEW_SITE) {
+                      // Lo escrito sirve de nombre (o de código, si parece uno: «PE210»)
+                      const q = showingCurrent ? '' : siteQuery.trim();
+                      const isCode = /^[A-Z]{1,4}\s?\d{2,5}$/i.test(q);
+                      setSiteError(null);
+                      setNewSite({ name: isCode ? '' : q, code: isCode ? q.toUpperCase() : '', address: '', district: '', province: 'LIMA' });
+                      setSiteQuery(siteIdRef.current ? siteLabel(siteIdRef.current) : '');
+                      return;
+                    }
                     // Título y memoria editados a mano: se cambia en ellos la tienda anterior por la nueva
                     const prev = cat.allSites.find((x) => x.id === siteIdRef.current);
                     const next = cat.allSites.find((x) => x.id === d.optionValue);
@@ -342,7 +387,17 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                       {siteLabel(x.id)}{(x.district || x.province) && <Caption1 style={{ marginLeft: 6, color: tokens.colorNeutralForeground3 }}>{x.district ?? x.province}</Caption1>}
                     </Option>
                   ))}
-                  {!siteMatches.length && <Option disabled value="" text="">Sin coincidencias</Option>}
+                  {!siteMatches.length && !canAddSite && <Option disabled value="" text="">Sin coincidencias</Option>}
+                  {canAddSite && (
+                    <Option value={NEW_SITE} text={siteQuery || 'Agregar tienda'}>
+                      <Caption1 style={{ color: tokens.colorNeutralForeground3, whiteSpace: 'normal' }}>
+                        {siteMatches.length ? '¿No está la tienda en la lista? ' : 'No hay tiendas con ese texto. '}
+                        <span style={{ color: tokens.colorBrandForeground1, fontWeight: 600 }}>
+                          {siteQuery.trim() && !showingCurrent ? `Agregar «${siteQuery.trim()}» como nueva tienda` : 'Agregar una tienda nueva'}
+                        </span>
+                      </Caption1>
+                    </Option>
+                  )}
                 </Combobox>
               </Field>
               <Field label="Especialidad" required>
@@ -454,6 +509,48 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
           {svc ? `Siguiente: ${equipmentMode ? 'Equipos' : 'Trabajos realizados'}` : 'Crear y continuar'}
         </AsyncButton>
       </div>
+
+      <Dialog open={!!newSite} onOpenChange={(_, d) => { if (!d.open && !savingSite) setNewSite(null); }}>
+        <DialogSurface style={{ maxWidth: 560 }}>
+          <DialogBody>
+            <DialogTitle>Agregar tienda</DialogTitle>
+            <DialogContent>
+              {newSite && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12 }}>
+                  <Caption1 style={{ gridColumn: '1 / -1', color: tokens.colorNeutralForeground3 }}>
+                    Se agrega a las tiendas de <b>{cat.clientName(form.client_id)}</b> y queda elegida en este servicio.
+                    Después se puede completar en Catálogos y plantillas.
+                  </Caption1>
+                  <Field label="Código">
+                    <Input value={newSite.code} placeholder="PE210" onChange={(_, d) => setNewSite({ ...newSite, code: d.value })} />
+                  </Field>
+                  <Field label="Nombre de la tienda" required>
+                    <Input value={newSite.name} placeholder="FO - SJL Mall Aventura" autoFocus
+                      onChange={(_, d) => setNewSite({ ...newSite, name: d.value })} />
+                  </Field>
+                  <Field label="Dirección" style={{ gridColumn: '1 / -1' }}>
+                    <Input value={newSite.address} placeholder="Av. Lurigancho Cdra. 9, San Juan de Lurigancho"
+                      onChange={(_, d) => setNewSite({ ...newSite, address: d.value })} />
+                  </Field>
+                  <Field label="Distrito">
+                    <Input value={newSite.district} onChange={(_, d) => setNewSite({ ...newSite, district: d.value })} />
+                  </Field>
+                  <Field label="Provincia">
+                    <Input value={newSite.province} onChange={(_, d) => setNewSite({ ...newSite, province: d.value })} />
+                  </Field>
+                  {siteError && <ErrorBar error={siteError} />}
+                </div>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button disabled={savingSite} onClick={() => setNewSite(null)}>Cancelar</Button>
+              <Button appearance="primary" disabled={savingSite || !newSite?.name.trim()} onClick={addSite}>
+                {savingSite ? 'Agregando…' : 'Agregar tienda'}
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       <Dialog open={!!conflict} modalType="alert">
         <DialogSurface style={{ maxWidth: 640 }}>
