@@ -234,8 +234,10 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
       </div>
       {pending && <ProgressBar thickness="medium" style={{ marginTop: -12, marginBottom: 12 }} aria-label="Cargando paso" />}
       {error && <ErrorBar error={error} />}
-      {serviceId && !bundle && !error && <Loading />}
-      {(!serviceId || bundle) && step === 'datos' && (
+      {/* Los Datos esperan también a los catálogos: al recargar la página la sede, el cliente y los textos automáticos
+          se calculan al abrir el paso y, sin la lista de sedes, la tienda salía como «—» */}
+      {((serviceId && !bundle) || (step === 'datos' && cat.loading)) && !error && <Loading />}
+      {(!serviceId || bundle) && step === 'datos' && !cat.loading && (
         <StepDatos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} withEquipment={withEquipment} />
       )}
       {bundle && step === 'equipos' && <StepEquipos bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} />}

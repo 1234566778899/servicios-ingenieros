@@ -78,6 +78,11 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
     return x ? (x.code?.trim() ? `${x.code.trim()} - ${x.name.trim()}` : x.name.trim()) : cat.siteName(id);
   };
   const [siteQuery, setSiteQuery] = useState(() => (form.site_id ? siteLabel(form.site_id) : ''));
+  // Si la lista de sedes llega después de abrir el paso, el campo toma el nombre en vez de quedarse en «—»
+  useEffect(() => {
+    if (form.site_id && (!siteQuery || siteQuery === '—')) setSiteQuery(siteLabel(form.site_id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cat.allSites]);
   // Sede elegida al instante: al cerrar la lista (que llega junto con la selección) `form` aún tiene el valor anterior
   const siteIdRef = useRef(form.site_id);
   siteIdRef.current = form.site_id;
