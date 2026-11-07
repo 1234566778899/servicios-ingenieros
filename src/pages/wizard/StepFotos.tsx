@@ -11,6 +11,7 @@ import { EquipmentRail } from '../../components/EquipmentRail';
 import { PhotoThumb } from '../../components/PhotoThumb';
 import { PhotoViewer } from '../../components/PhotoViewer';
 import { usePhotoDrag } from '../../components/photoDrag';
+import { usePhotoPaste } from '../../components/photoPaste';
 import { useCatalogs } from '../../lib/catalogs';
 import { supabase, must } from '../../lib/supabase';
 import { logActivity, photoStagesDone, removePhotoFiles, savePhotoOrder, settleLimited, syncPhotoStatus, uploadPhoto } from '../../lib/services';
@@ -131,6 +132,8 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
     if (p) move(p, stage as Stage, position);
   }, !readOnly);
 
+  const paste = usePhotoPaste(!readOnly && !uploading && !!eq, 'antes', (stage, files) => upload(stage as Stage, files));
+
   const pick = (stage: Stage) => {
     target.current = stage;
     fileRef.current?.click();
@@ -165,7 +168,7 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
             const list = stagePhotos(selId, st.id);
             const key = st.id;
             return (
-              <div key={st.id} className={s.stage}>
+              <div key={st.id} className={s.stage} {...paste.zone(st.id)}>
                 <div className={s.stageHead}>
                   <Text weight="semibold">{st.label.toUpperCase()}</Text>
                   <Badge appearance="tint" color={list.length ? 'success' : 'warning'}>{list.length} {list.length === 1 ? 'foto' : 'fotos'}</Badge>
@@ -213,7 +216,7 @@ export function StepFotos({ bundle, reload, patch, readOnly, goTo }: StepProps) 
                       }}>
                       <Add24Regular />
                       <Text size={200}>Agregar fotos</Text>
-                      <Caption1>o arrastra aquí (varias a la vez)</Caption1>
+                      <Caption1>{paste.target === key ? 'o arrastra aquí · Ctrl+V para pegar' : 'o arrastra aquí (varias a la vez)'}</Caption1>
                     </button>
                   )}
                 </div>

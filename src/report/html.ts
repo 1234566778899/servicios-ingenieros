@@ -1,5 +1,6 @@
 import { siteAddress } from '../lib/format';
 import { fitImage, scaledRow, type ReportImage, type ReportModel } from './model';
+import { isRichEmpty, toRichHtml } from '../lib/richText';
 import logo from '../assets/logo.png?inline';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -30,7 +31,10 @@ const CSS = `
   .prow .box { display: flex; align-items: center; justify-content: center; }
   .prow img { max-width: 100%; max-height: 100%; display: block; }
   .prow figcaption { font-size: 7.5pt; color: #444; margin-top: 2px; }
-  .desc { text-align: center; font-weight: bold; margin: 8px 0 14px; }
+  .desc { margin: 4px 0 10px; }
+  .desc p:empty::before { content: '\\00a0'; }
+  .desc ul, .desc ol { margin: 6px 0 6px 18px; padding: 0; }
+  .desc li { text-align: justify; line-height: 1.4; }
   .nc { color: #b00020; font-weight: bold; }
   p { margin: 6px 0; text-align: justify; line-height: 1.4; }
   ul { margin: 6px 0 6px 18px; padding: 0; }
@@ -116,8 +120,8 @@ function renderServiceHtml(m: ReportModel) {
     groups.forEach((g, i) => {
       pages.push(page(m, `${i === 0 ? `<h2>${sec}. REGISTRO FOTOGRÁFICO</h2>` : ''}
         <h3>${sec}.${i + 1}. ${esc(g.title)}</h3>
-        ${g.rows.map(photoRow).join('')}
-        ${g.description ? `<p class="desc">${esc(g.description)}</p>` : ''}`));
+        ${isRichEmpty(g.description) ? '' : `<div class="desc">${toRichHtml(g.description)}</div>`}
+        ${g.rows.map(photoRow).join('')}`));
     });
   }
 

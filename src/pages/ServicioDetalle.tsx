@@ -18,6 +18,7 @@ import { useServicePresence } from '../lib/presence';
 import { fmtDate, fmtDateTime, fmtSize } from '../lib/format';
 import { useNotify } from '../lib/toast';
 import { openReportFile, saveReportFile } from '../report/generate';
+import { richToPlain } from '../lib/richText';
 import { STAGES, type Photo, type Report } from '../lib/types';
 
 const useStyles = makeStyles({
@@ -225,7 +226,7 @@ export function ServicioDetalle({ id }: { id: string }) {
       {tab === 'fotos' && !withEquipment && (
         <div className={s.col}>
           {groups.map((g) => (
-            <Section key={g.id} title={g.title} subtitle={`${groupPhotos(g.id).length} fotos${g.description ? ` · ${g.description}` : ''}`}>
+            <Section key={g.id} title={g.title} subtitle={`${groupPhotos(g.id).length} fotos${richToPlain(g.description) ? ` · ${richToPlain(g.description).replace(/\s+/g, ' ')}` : ''}`}>
               <div className={s.gallery}>
                 {groupPhotos(g.id).map((p, i, list) => (
                   <div key={p.id}>

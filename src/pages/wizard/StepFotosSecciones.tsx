@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Badge, Button, Caption1, Field, Input, Spinner, Text, Tooltip, makeStyles, mergeClasses, tokens,
+  Badge, Button, Caption1, Field, Input, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Spinner, Text, ToolbarButton, Tooltip,
+  makeStyles, mergeClasses, tokens,
 } from '@fluentui/react-components';
 import {
   Add20Regular, Add24Regular, ArrowDown16Regular, ArrowLeft20Regular, ArrowRight20Regular, ArrowUp16Regular,
-  ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular,
+  ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular, TextBulletListSquareEdit20Regular,
 } from '@fluentui/react-icons';
 import { AsyncButton, Section } from '../../components/common';
-import { ConceptInput, invalidateConcepts } from '../../components/Concepts';
+import { invalidateConcepts, matchConcepts, useConcepts } from '../../components/Concepts';
+import { RichTextEditor } from '../../components/RichTextEditor';
+import { isRichEmpty, richToPlain } from '../../lib/richText';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { PhotoThumb } from '../../components/PhotoThumb';
 import { PhotoViewer } from '../../components/PhotoViewer';
 import { usePhotoDrag } from '../../components/photoDrag';
+import { usePhotoPaste } from '../../components/photoPaste';
 import { supabase, must } from '../../lib/supabase';
 import { logActivity, rememberConcepts, removePhotoFiles, savePhotoOrder, settleLimited, syncPhotoStatus, uploadPhoto } from '../../lib/services';
 import { useNotify } from '../../lib/toast';
@@ -20,7 +24,8 @@ import type { StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
   col: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  meta: { display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px', marginBottom: '12px', '@media (max-width: 700px)': { gridTemplateColumns: '1fr' } },
+  // Título y, debajo, la descripción con formato (en el informe va en ese mismo orden, antes de las fotos)
+  meta: { display: 'grid', gridTemplateColumns: '1fr', gap: '12px', marginBottom: '12px' },
   tiles: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr 1fr', gap: '8px' } },
   slot: {
     border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, padding: '6px',
@@ -47,6 +52,8 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
   const s = useStyles();
   const notify = useNotify();
   const svc = bundle.service;
+  const concepts = useConcepts('foto');
+  const frequent = matchConcepts(concepts, '', svc.specialty, [], 12);
   const groups = [...bundle.photoGroups].sort(byPosition);
   const [uploading, setUploading] = useState<string | null>(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -78,7 +85,10 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
     if (!d) return;
     const changes: Partial<PhotoGroup> = {};
     if (d.title !== undefined && d.title.trim() && d.title.trim() !== g.title) changes.title = d.title.trim();
-    if (d.description !== undefined && (d.description.trim() || null) !== g.description) changes.description = d.description.trim() || null;
+    if (d.description !== undefined) {
+      const desc = isRichEmpty(d.description) ? null : d.description;
+      if (desc !== g.description) changes.description = desc;
+    }
     setDrafts(({ [g.id]: _, ...rest }) => rest);
     if (!Object.keys(changes).length) return;
     const setGroup = (fields: Partial<PhotoGroup>) =>
@@ -92,7 +102,8 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
       return notify('No se pudo guardar la sección', 'error', error.message);
     }
     if (changes.description) {
-      await rememberConcepts('foto', svc.specialty, [changes.description]);
+      // Los textos frecuentes se guardan sin formato
+      await rememberConcepts('foto', svc.specialty, [richToPlain(changes.description)]);
       invalidateConcepts('foto');
     }
   };
@@ -217,6 +228,8 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
   // Al cambiar de paso se guardan los títulos / descripciones que sigan en edición
   const flush = () => Promise.all(groups.filter((g) => drafts[g.id]).map(saveGroup));
 
+  const paste = usePhotoPaste(!readOnly && !uploading, groups[0]?.id ?? '', upload);
+
   return (
     <>
       <input ref={fileRef} type="file" accept="image/jpeg,image/png" multiple hidden
@@ -231,7 +244,8 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
           const list = photosOf(g.id);
           const d = drafts[g.id] ?? {};
           return (
-            <Section key={g.id}
+            <div key={g.id} {...paste.zone(g.id)}>
+            <Section
               title={`${gi + 1}. ${g.title}`}
               actions={!readOnly && (
                 <>
@@ -246,10 +260,24 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
                   <Input value={d.title ?? g.title} disabled={readOnly}
                     onChange={(_, x) => setDrafts((all) => ({ ...all, [g.id]: { ...all[g.id], title: x.value } }))} />
                 </Field>
-                <Field label="Descripción (debajo de las fotos)">
-                  <ConceptInput kind="foto" specialty={svc.specialty} disabled={readOnly} value={d.description ?? g.description ?? ''}
-                    placeholder="Ej.: Estado inicial de las puertas antes del servicio"
-                    onChange={(v) => setDrafts((all) => ({ ...all, [g.id]: { ...all[g.id], description: v } }))} />
+                <Field label="Descripción (va debajo del título, antes de las fotos)">
+                  <RichTextEditor disabled={readOnly} value={g.description ?? ''}
+                    placeholder="Ej.: Se hace la inspección del tablero, llaves y rotulado…"
+                    onChange={(v) => setDrafts((all) => ({ ...all, [g.id]: { ...all[g.id], description: v } }))}
+                    extra={(insert) => frequent.length > 0 && (
+                      <Menu>
+                        <MenuTrigger disableButtonEnhancement>
+                          <Tooltip content="Insertar un texto frecuente" relationship="label" withArrow>
+                            <ToolbarButton icon={<TextBulletListSquareEdit20Regular />} onMouseDown={(e) => e.preventDefault()}>Textos frecuentes</ToolbarButton>
+                          </Tooltip>
+                        </MenuTrigger>
+                        <MenuPopover style={{ maxWidth: 520 }}>
+                          <MenuList>
+                            {frequent.map((c) => <MenuItem key={c.id} onClick={() => insert(c.text)}>{c.text}</MenuItem>)}
+                          </MenuList>
+                        </MenuPopover>
+                      </Menu>
+                    )} />
                 </Field>
               </div>
               {uploading === g.id && <Spinner size="tiny" label={`Subiendo ${Math.min(progress.done + 1, progress.total)} de ${progress.total}…`} style={{ marginBottom: 8 }} />}
@@ -295,12 +323,13 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
                     }}>
                     <Add24Regular />
                     <Text size={200}>Agregar fotos</Text>
-                    <Caption1>o arrastra aquí (varias a la vez)</Caption1>
+                    <Caption1>{paste.target === g.id ? 'o arrastra aquí · Ctrl+V para pegar' : 'o arrastra aquí (varias a la vez)'}</Caption1>
                   </button>
                 )}
               </div>
               {readOnly && !list.length && <Caption1>Sin fotos.</Caption1>}
             </Section>
+            </div>
           );
         })}
         {!readOnly && groups.length > 0 && (

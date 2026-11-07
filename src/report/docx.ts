@@ -4,6 +4,7 @@ import {
 } from 'docx';
 import { siteAddress } from '../lib/format';
 import { fitImage, scaledRow, type ReportImage, type ReportModel } from './model';
+import { richBlocks } from '../lib/richText';
 import logoDataUrl from '../assets/logo.png?inline';
 
 // Logo 400×113 px embebido en el bundle
@@ -108,6 +109,19 @@ function memoriaBlocks(m: ReportModel, n: number, pageBreakBefore: boolean) {
 
 const bullets = (xs: string[]) => xs.map((d) => p(`•  ${d}`));
 
+/** Descripción con formato (negrita, cursiva, subrayado, listas) como párrafos del Word. */
+const richParagraphs = (value?: string | null) => richBlocks(value).map((b) => new Paragraph({
+  alignment: AlignmentType.JUSTIFIED,
+  spacing: { after: 80 },
+  indent: b.list ? { left: 360, hanging: 240 } : undefined,
+  children: [
+    ...(b.list ? [new TextRun({ text: b.list === 'bullet' ? '•\t' : `${b.index}.\t`, size: 19, font: 'Arial' })] : []),
+    ...b.runs.map((r) => r.br
+      ? new TextRun({ break: 1 })
+      : new TextRun({ text: r.text, bold: r.bold, italics: r.italic, underline: r.underline ? {} : undefined, size: 19, font: 'Arial' })),
+  ],
+}));
+
 /** Celda de foto de un equipo: la imagen (con sus figuras) y, si lo hay, el comentario debajo.
  *  Caja de 170 × 125 px a escala 1; al agrandarla el tope es el ancho de la celda (~190 px). */
 const photoCell = (im: ReportImage | null, width: number, empty = '') => cell(im
@@ -182,8 +196,8 @@ function serviceBody(m: ReportModel) {
     groups.forEach((g, i) => {
       if (i === 0) body.push(h2(`${sec}. REGISTRO FOTOGRÁFICO`, pg.take()));
       body.push(h3(`${sec}.${i + 1}. ${g.title}`, i > 0));
+      body.push(...richParagraphs(g.description));
       body.push(...g.rows.flatMap(photoRow));
-      if (g.description) body.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 120 }, children: [new TextRun({ text: g.description, bold: true, size: 19, font: 'Arial' })] }));
     });
   }
   if (has('conclusiones')) {
