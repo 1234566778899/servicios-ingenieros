@@ -14,9 +14,9 @@ import { useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
 import { today, fmtSize } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
-import { photoStagesDone, savePhotoScale } from '../../lib/services';
+import { logActivity, photoStagesDone, savePhotoOrder, savePhotoScale } from '../../lib/services';
 import type { Report } from '../../lib/types';
-import { buildReportModel, withScales, type ReportModel } from '../../report/model';
+import { buildReportModel, withScales, withSwap, type ReportModel } from '../../report/model';
 import { ReportPreview } from '../../components/ReportPreview';
 import { renderReportHtml } from '../../report/html';
 import { generateReport, openReportFile, printReportHtml, saveReportFile } from '../../report/generate';
@@ -46,7 +46,12 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
   const [baseModel, setModel] = useState<ReportModel | null>(null);
   /** Tamaños de foto cambiados en la vista previa (id → escala), sin volver a armar el modelo */
   const [scales, setScales] = useState<Record<string, number>>({});
-  const model = useMemo(() => (baseModel ? withScales(baseModel, scales) : null), [baseModel, scales]);
+  /** Fotos intercambiadas en la vista previa (en orden), hasta que se vuelve a armar el modelo */
+  const [swaps, setSwaps] = useState<[string, string][]>([]);
+  const model = useMemo(
+    () => (baseModel ? withScales(swaps.reduce((m, [a, b]) => withSwap(m, a, b), baseModel), scales) : null),
+    [baseModel, scales, swaps],
+  );
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Report | null>(null);
@@ -65,7 +70,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
     let live = true;
     setModel(null);
     buildReportModel(bundle, tpl, issueDate, { ...cat, clientName, site },(d, t) => live && setProgress(t ? d / t : 1))
-      .then((m) => live && setModel(m))
+      .then((m) => { if (live) { setModel(m); setSwaps([]); } })
       .catch((e) => live && setError(friendlyError(e)));
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,6 +135,23 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
     } catch (e: any) {
       setScales((x) => ({ ...x, [id]: before }));
       notify('No se pudo guardar el tamaño de la foto', 'error', friendlyError(e));
+    }
+  };
+
+  /** Intercambia dos fotos (arrastrando en la vista previa): se ve al instante y se guardan sus posiciones */
+  const swapPhotos = async (a: string, b: string) => {
+    const A = bundle.photos.find((p) => p.id === a);
+    const B = bundle.photos.find((p) => p.id === b);
+    if (!A || !B) return;
+    setSwaps((x) => [...x, [a, b]]);
+    try {
+      await savePhotoOrder(bundle.photos, [{ ...A, position: B.position }, { ...B, position: A.position }]);
+      // Así se conserva al volver a otros pasos sin recargar el servicio
+      [A.position, B.position] = [B.position, A.position];
+      void logActivity(svc.id, 'cambió el orden de las fotos en la vista previa').catch(() => {});
+    } catch (e: any) {
+      setSwaps((x) => [...x, [a, b]]); // deshace el intercambio en pantalla
+      notify('No se pudo guardar el orden de las fotos', 'error', friendlyError(e));
     }
   };
 
@@ -206,7 +228,7 @@ export function StepInforme({ bundle, reload, readOnly, goTo, withEquipment }: S
             </div>
           )}
           {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-          {model && <ReportPreview className={s.preview} html={html} editable={!readOnly} onScale={changeScale} />}
+          {model && <ReportPreview className={s.preview} html={html} editable={!readOnly} onScale={changeScale} onSwap={swapPhotos} />}
         </Section>
       </div>
       <div className={s.footer}>

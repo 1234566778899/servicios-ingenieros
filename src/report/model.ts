@@ -52,32 +52,44 @@ export interface ReportModel {
 /** Foto vertical (más alta que ancha, con un margen para las casi cuadradas, que van con las horizontales) */
 export const isPortrait = (im: { width: number; height: number }) => im.height > im.width * 1.05;
 
-/** Registro fotográfico por secciones: las verticales juntas de 3 en 3 y las horizontales juntas de 2 en 2
- *  (no se mezclan en una fila). Cada grupo conserva el orden elegido; va primero el de la primera foto. */
+/** Registro fotográfico por secciones: las verticales juntas de 3 en 3 y las horizontales juntas de 2 en 2.
+ *  Cada grupo conserva el orden elegido; va primero el de la primera foto. Si al final sobran una vertical
+ *  y una horizontal sueltas, van juntas en la última fila, a la misma altura. */
 export function orientationRows(list: ReportImage[]): ReportImage[][] {
   const chunk = (xs: ReportImage[], n: number) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
   const vertical = chunk(list.filter(isPortrait), 3);
   const horizontal = chunk(list.filter((x) => !isPortrait(x)), 2);
-  return list.length && isPortrait(list[0]) ? [...vertical, ...horizontal] : [...horizontal, ...vertical];
+  const verticalFirst = list.length > 0 && isPortrait(list[0]);
+  const lastV = vertical.at(-1);
+  const lastH = horizontal.at(-1);
+  if (lastV?.length === 1 && lastH?.length === 1) {
+    vertical.pop();
+    horizontal.pop();
+    const mixed = verticalFirst ? [...lastV, ...lastH] : [...lastH, ...lastV];
+    return verticalFirst ? [...vertical, ...horizontal, mixed] : [...horizontal, ...vertical, mixed];
+  }
+  return verticalFirst ? [...vertical, ...horizontal] : [...horizontal, ...vertical];
 }
 
-/** Cajas iguales para todas las fotos de una misma orientación, en cualquier fila: 3 verticales (3:4) o
- *  2 horizontales (4:3) llenan el ancho, con un tope de altura. Una fila incompleta usa las mismas cajas
- *  (se centra, no se agranda). Cada foto se encaja en su caja sin recortar ni deformar.
- *  Devuelve el ancho de cada caja y la altura de la fila, en las mismas unidades que `width`. */
-export function rowLayout(row: ReportImage[], width: number, gap: number, maxHeight: number) {
-  const portrait = row.every(isPortrait);
-  const slots = Math.max(row.length, portrait ? 3 : 2);
-  const ratio = portrait ? 3 / 4 : 4 / 3;
-  const height = Math.min(maxHeight, (width - gap * (slots - 1)) / slots / ratio);
-  return { height, widths: row.map(() => height * ratio) };
-}
-
-/** Fila con el tamaño de cada foto: parte de `rowLayout` y aplica su escala; si la fila ya no entra en el ancho,
- *  se reduce entera. Devuelve la caja (ancho y alto) de cada foto, en las mismas unidades que `width`. */
+/** Caja de cada foto según su orientación, igual en todas las filas: 3 verticales (3:4) o 2 horizontales (4:3)
+ *  llenan el ancho, con un tope de altura. Una fila incompleta usa las mismas cajas (se centra, no se agranda).
+ *  Después se aplica la escala de cada foto y, si la fila ya no entra en el ancho, se reduce entera.
+ *  Devuelve la caja (ancho y alto) de cada foto, en las mismas unidades que `width`. */
 export function scaledRow(row: ReportImage[], width: number, gap: number, maxHeight: number) {
-  const { height, widths } = rowLayout(row, width, gap, maxHeight);
-  const boxes = row.map((im, i) => ({ w: widths[i] * im.scale, h: height * im.scale }));
+  const box = (portrait: boolean) => {
+    const slots = portrait ? 3 : 2;
+    const ratio = portrait ? 3 / 4 : 4 / 3;
+    const h = Math.min(maxHeight, (width - gap * (slots - 1)) / slots / ratio);
+    return { w: h * ratio, h };
+  };
+  let base = row.map((im) => box(isPortrait(im)));
+  // Fila mixta (la vertical y la horizontal que sobraron): las dos a la misma altura, la de la vertical si entra
+  if (new Set(row.map(isPortrait)).size > 1) {
+    const ratios = base.map((b) => b.w / b.h);
+    const h = Math.min(Math.max(...base.map((b) => b.h)), (width - gap * (row.length - 1)) / ratios.reduce((a, r) => a + r, 0));
+    base = ratios.map((r) => ({ w: h * r, h }));
+  }
+  const boxes = row.map((im, i) => ({ w: base[i].w * im.scale, h: base[i].h * im.scale }));
   const free = width - gap * (row.length - 1);
   const total = boxes.reduce((a, b) => a + b.w, 0);
   const k = total > free ? free / total : 1;
@@ -99,6 +111,21 @@ export function withScales(m: ReportModel, scales: Record<string, number>): Repo
     ...m,
     equipment: m.equipment.map((e) => ({ ...e, photos: e.photos.map((st) => ({ ...st, rows: st.rows.map((r) => r.map(sc)) })) })),
     photoGroups: m.photoGroups.map((g) => ({ ...g, rows: g.rows.map((r) => r.map(sc)) })),
+  };
+}
+
+/** Copia del modelo con dos fotos intercambiadas (arrastrando en la vista previa, sin volver a descargar fotos).
+ *  Solo se intercambian dentro de la misma sección/etapa y con la misma orientación: la distribución no cambia. */
+export function withSwap(m: ReportModel, a: string, b: string): ReportModel {
+  const all = [...m.photoGroups.flatMap((g) => g.rows.flat()), ...m.equipment.flatMap((e) => e.photos.flatMap((st) => st.rows.flat()))];
+  const A = all.find((x) => x?.id === a);
+  const B = all.find((x) => x?.id === b);
+  if (!A || !B) return m;
+  const sw = <T extends ReportImage | null>(im: T): T => (im?.id === a ? (B as T) : im?.id === b ? (A as T) : im);
+  return {
+    ...m,
+    equipment: m.equipment.map((e) => ({ ...e, photos: e.photos.map((st) => ({ ...st, rows: st.rows.map((r) => r.map(sw)) })) })),
+    photoGroups: m.photoGroups.map((g) => ({ ...g, rows: g.rows.map((r) => r.map(sw)) })),
   };
 }
 

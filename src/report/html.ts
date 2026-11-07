@@ -1,5 +1,5 @@
 import { siteAddress } from '../lib/format';
-import { fitImage, scaledRow, type ReportImage, type ReportModel } from './model';
+import { fitImage, isPortrait, scaledRow, type ReportImage, type ReportModel } from './model';
 import { isRichEmpty, toRichHtml } from '../lib/richText';
 import logo from '../assets/logo.png?inline';
 
@@ -73,24 +73,25 @@ const memoria = (m: ReportModel, n: number) => `<h2>${n}. MEMORIA DESCRIPTIVA</h
 
 /** Celda de foto: la imagen (con sus figuras) y, si lo hay, el comentario debajo */
 const mm = (n: number) => `${n.toFixed(1)}mm`;
-const imgTag = (img: ReportImage, w: number, h: number) =>
-  `<img src="${img.dataUrl}" data-photo="${img.id}" data-scale="${img.scale}" style="width:${mm(w)};height:${mm(h)}"/>`;
+/** `grp`: grupo dentro del que se puede intercambiar la foto arrastrándola en la vista previa */
+const imgTag = (img: ReportImage, w: number, h: number, grp = '') =>
+  `<img src="${img.dataUrl}" data-photo="${img.id}" data-scale="${img.scale}" data-grp="${grp}" style="width:${mm(w)};height:${mm(h)}"/>`;
 
 /** Celda de foto de un equipo: caja de ~50 × 46 mm (el ancho de la celda es el tope al agrandarla) */
-const photoCell = (img: ReportImage | null, empty = '') => {
+const photoCell = (img: ReportImage | null, empty = '', grp = '') => {
   if (!img) return `<td class="cap">${empty}</td>`;
   const { w, h } = fitImage(img, 50, 46);
-  return `<td>${imgTag(img, w, h)}${img.caption ? `<div class="cap">${esc(img.caption)}</div>` : ''}</td>`;
+  return `<td>${imgTag(img, w, h, grp)}${img.caption ? `<div class="cap">${esc(img.caption)}</div>` : ''}</td>`;
 };
 
 /** Fila de fotos sin tabla: hasta 3, a la misma altura y centradas (si la última queda sola sale al medio).
  *  Medidas en mm: 178 de ancho útil, 4 entre fotos, 72 de alto como máximo. */
-const photoRow = (row: ReportImage[]) => {
+const photoRow = (row: ReportImage[], group = '') => {
   const boxes = scaledRow(row, 178, 4, 72);
   return `<div class="prow">${row.map((img, i) => {
     // La caja ya lleva la escala; la foto se encaja dentro (las muy alargadas no la llenan)
     const { w, h } = fitImage({ ...img, scale: 1 }, boxes[i].w, boxes[i].h);
-    return `<figure style="width:${mm(boxes[i].w)}"><div class="box" style="height:${mm(boxes[i].h)}">${imgTag(img, w, h)}</div>${img.caption ? `<figcaption>${esc(img.caption)}</figcaption>` : ''}</figure>`;
+    return `<figure style="width:${mm(boxes[i].w)}"><div class="box" style="height:${mm(boxes[i].h)}">${imgTag(img, w, h, `${group}-${isPortrait(img) ? 'v' : 'h'}`)}</div>${img.caption ? `<figcaption>${esc(img.caption)}</figcaption>` : ''}</figure>`;
   }).join('')}</div>`;
 };
 
@@ -121,7 +122,7 @@ function renderServiceHtml(m: ReportModel) {
       pages.push(page(m, `${i === 0 ? `<h2>${sec}. REGISTRO FOTOGRÁFICO</h2>` : ''}
         <h3>${sec}.${i + 1}. ${esc(g.title)}</h3>
         ${isRichEmpty(g.description) ? '' : `<div class="desc">${toRichHtml(g.description)}</div>`}
-        ${g.rows.map(photoRow).join('')}`));
+        ${g.rows.map((row) => photoRow(row, `g${i}`)).join('')}`));
     });
   }
 
@@ -177,7 +178,7 @@ export function renderReportHtml(m: ReportModel) {
         <h3>${esc(e.code)} · ${esc(e.type)} ${esc(e.capacity)}</h3>
         <table class="ph">
           <tr><th>Etapa</th><th>Foto 1</th><th>Foto 2</th><th>Foto 3</th></tr>
-          ${e.photos.map((st) => st.rows.map((row, ri) => `<tr>${ri === 0 ? `<td rowspan="${st.rows.length}">${st.stage}</td>` : ''}${row.map((img) => photoCell(img, '—')).join('')}</tr>`).join('')).join('')}
+          ${e.photos.map((st, si) => st.rows.map((row, ri) => `<tr>${ri === 0 ? `<td rowspan="${st.rows.length}">${st.stage}</td>` : ''}${row.map((img) => photoCell(img, '—', `e${i}-${si}`)).join('')}</tr>`).join('')).join('')}
         </table>`));
     });
   }
