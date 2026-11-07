@@ -13,7 +13,7 @@ import { optionNames, useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
 import { supabase } from '../../lib/supabase';
 import { addInventoryToService, loadSiteInventory, logActivity, rememberConcepts, type ServiceBundle } from '../../lib/services';
-import { coverTitle, memoria, equipmentSummary, swapSite, DEFAULT_PREV_DETAILS } from '../../lib/texts';
+import { coverTitle, memoria, equipmentSummary, noDashes, swapSite, DEFAULT_PREV_DETAILS } from '../../lib/texts';
 import { fmtDateTime, fold, siteAddress, today } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
 import type { Service } from '../../lib/types';
@@ -88,18 +88,16 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
   siteIdRef.current = form.site_id;
   // Siguen automáticos (cambian con la sede, el tipo o la especialidad) mientras coincidan con lo que se generaría:
   // antes, al crear el servicio quedaban fijos con la primera sede elegida aunque nadie los hubiera editado
-  const [autoTitle, setAutoTitle] = useState(() => {
-    if (!svc?.cover_title) return true;
-    const st = cat.allSites.find((x) => x.id === svc.site_id);
-    const eqMode = cat.hasEquipment(svc.specialty) || (!!bundle?.equipment.length && withEquipment);
-    return svc.cover_title === coverTitle(svc.service_type, svc.specialty, st, eqMode);
-  });
-  const [autoDesc, setAutoDesc] = useState(() => {
-    if (!svc?.description) return true;
-    const st = cat.allSites.find((x) => x.id === svc.site_id);
-    const eqMode = cat.hasEquipment(svc.specialty) || (!!bundle?.equipment.length && withEquipment);
-    return svc.description === memoria(svc.service_type, svc.specialty, st, eqMode);
-  });
+  // Se considera automático si es el texto generado para cualquier sede del cliente (no solo la guardada):
+  // así un título que quedó con otra tienda también se actualiza
+  // (sin contar guiones: los títulos anteriores llevaban «FO - SJL…» y ahora van sin guion)
+  const generated = (text: string | null | undefined, gen: (st: (typeof cat.allSites)[number]) => string, clientId: string) =>
+    !text || cat.allSites.some((st) => st.client_id === clientId && noDashes(gen(st)) === noDashes(text));
+  const svcEqMode = !!svc && (cat.hasEquipment(svc.specialty) || (!!bundle?.equipment.length && withEquipment));
+  const [autoTitle, setAutoTitle] = useState(() =>
+    !svc || generated(svc.cover_title, (st) => coverTitle(svc.service_type, svc.specialty, st, svcEqMode), svc.client_id));
+  const [autoDesc, setAutoDesc] = useState(() =>
+    !svc || generated(svc.description, (st) => memoria(svc.service_type, svc.specialty, st, svcEqMode), svc.client_id));
   const [nextCode, setNextCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ server: Service; fields: (keyof Form)[] } | null>(null);
@@ -330,8 +328,14 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                     // Título y memoria editados a mano: se cambia en ellos la tienda anterior por la nueva
                     const prev = cat.allSites.find((x) => x.id === siteIdRef.current);
                     const next = cat.allSites.find((x) => x.id === d.optionValue);
-                    if (!autoTitle) set('cover_title', swapSite(form.cover_title, prev, next));
-                    if (!autoDesc) set('description', swapSite(form.description, prev, next));
+                    if (!autoTitle) {
+                      if (generated(form.cover_title, (st) => coverTitle(form.service_type, form.specialty, st, equipmentMode), form.client_id)) setAutoTitle(true);
+                      else set('cover_title', swapSite(form.cover_title, prev, next));
+                    }
+                    if (!autoDesc) {
+                      if (generated(form.description, (st) => memoria(form.service_type, form.specialty, st, equipmentMode), form.client_id)) setAutoDesc(true);
+                      else set('description', swapSite(form.description, prev, next));
+                    }
                     siteIdRef.current = d.optionValue;
                     set('site_id', d.optionValue);
                     setSiteQuery(siteLabel(d.optionValue));

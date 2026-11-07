@@ -6,10 +6,15 @@ const num2 = (n: number) => String(n).padStart(2, '0');
 /** "Mantenimiento preventivo" → "mantenimiento preventivo" */
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
+/** Sin guiones: «FO - SJL Mall Aventura» → «FO SJL Mall Aventura» */
+export const noDashes = (s: string) => s.replace(/\s*-\s*/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** Tienda para el título de portada: código y nombre sin guiones, como la identifica el cliente («PE210 FO SJL MALL AVENTURA») */
+export const storeTitle = (site?: Site | null) => noDashes([site?.code?.trim(), site?.name?.trim()].filter(Boolean).join(' ')).toUpperCase();
+
 export function coverTitle(serviceType: string, specialty: string, site?: Site | null, withEquipment = true) {
   const what = withEquipment ? `DE EQUIPO DE ${specialty.toUpperCase()}` : `DE ${specialty.toUpperCase()}`;
-  // Con el código de la tienda delante, como lo identifica el cliente: «TIENDA (PE210 FO - SJL MALL AVENTURA)»
-  const store = [site?.code?.trim(), site?.name?.trim()].filter(Boolean).join(' ');
+  const store = storeTitle(site);
   return `SERVICIO DE ${serviceType.toUpperCase()} ${what} · TIENDA (${store.toUpperCase()})`;
 }
 
@@ -64,6 +69,8 @@ export function swapSite(text: string | null | undefined, from?: Site | null, to
   const t = (x?: string | null) => (x ?? '').trim();
   const join = (sep: string, a: string, b: string) => [a, b].filter(Boolean).join(sep);
   const pairs: [string, string][] = [
+    // Como sale en el título de portada (sin guiones)
+    [storeTitle(from), storeTitle(to)],
     ...(t(from.code) ? [
       [join(' - ', t(from.code), t(from.name)), join(' - ', t(to.code), t(to.name))],
       [join(' ', t(from.code), t(from.name)), join(' ', t(to.code), t(to.name))],
