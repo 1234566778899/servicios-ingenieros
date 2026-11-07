@@ -8,7 +8,9 @@ const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 export function coverTitle(serviceType: string, specialty: string, site?: Site | null, withEquipment = true) {
   const what = withEquipment ? `DE EQUIPO DE ${specialty.toUpperCase()}` : `DE ${specialty.toUpperCase()}`;
-  return `SERVICIO DE ${serviceType.toUpperCase()} ${what} · TIENDA (${(site?.name ?? '').toUpperCase()})`;
+  // Con el código de la tienda delante, como lo identifica el cliente: «TIENDA (PE210 FO - SJL MALL AVENTURA)»
+  const store = [site?.code?.trim(), site?.name?.trim()].filter(Boolean).join(' ');
+  return `SERVICIO DE ${serviceType.toUpperCase()} ${what} · TIENDA (${store.toUpperCase()})`;
 }
 
 export function memoria(serviceType: string, specialty: string, site?: Site | null, withEquipment = true) {
