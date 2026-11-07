@@ -153,10 +153,10 @@ export function Servicios() {
             </Dropdown>
           </Field>
           <Field label="Sede">
-            <Dropdown placeholder="Todas" selectedOptions={[siteId]} value={siteId ? cat.siteName(siteId) : ''}
+            <Dropdown placeholder="Todas" selectedOptions={[siteId]} value={siteId ? cat.siteLabel(siteId) : ''}
               onOptionSelect={(_, d) => set(setSiteId)(d.optionValue ?? '')} style={{ minWidth: 170 }}>
               <Option value="">Todas</Option>
-              {sites.map((x) => <Option key={x.id} value={x.id}>{x.name}</Option>)}
+              {sites.map((x) => <Option key={x.id} value={x.id}>{cat.siteLabel(x.id)}</Option>)}
             </Dropdown>
           </Field>
           <Field label="Tipo de servicio">
@@ -197,7 +197,7 @@ export function Servicios() {
               <TableRow key={r.id} className={s.row} onDoubleClick={() => navigate(`/servicios/${r.id}`)}>
                 <TableCell><Link onClick={() => navigate(`/servicios/${r.id}`)}>{r.code}</Link></TableCell>
                 <TableCell>{cat.clientName(r.client_id)}</TableCell>
-                <TableCell>{cat.siteName(r.site_id)}</TableCell>
+                <TableCell>{cat.siteLabel(r.site_id)}</TableCell>
                 <TableCell>{shortType(r.service_type)}</TableCell>
                 <TableCell>{r.service_equipment?.[0]?.count ?? 0}</TableCell>
                 <TableCell>{cat.userName(r.lead_tech_id)}</TableCell>

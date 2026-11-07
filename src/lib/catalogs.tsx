@@ -21,6 +21,8 @@ interface Catalogs {
   reload: () => Promise<void>;
   clientName: (id?: string | null) => string;
   siteName: (id?: string | null) => string;
+  /** «PE106 - BCS - Plaza San Miguel»: con el código delante (sin código, solo el nombre) */
+  siteLabel: (id?: string | null) => string;
   typeName: (id?: string | null) => string;
   userName: (id?: string | null) => string;
   /** La especialidad lleva lista de equipos, checklist y hallazgos (p. ej. aire acondicionado). */
@@ -74,6 +76,10 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
         clients: activeClients, sites: activeSites, allClients: clients, allSites: sites, equipmentTypes, users, reportTemplates, serviceTypes, specialties, loading, error, reload,
         clientName: by(clients, 'name'),
         siteName: by(sites, 'name'),
+        siteLabel: (id) => {
+          const x = id ? sites.find((s) => s.id === id) : undefined;
+          return x ? (x.code?.trim() ? `${x.code.trim()} - ${x.name.trim()}` : x.name.trim()) : '—';
+        },
         typeName: by(equipmentTypes, 'name'),
         userName: by(users, 'full_name'),
         hasEquipment: (name) => !!specialties.find((x) => x.name === name)?.has_equipment,

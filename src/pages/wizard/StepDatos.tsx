@@ -73,10 +73,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
         },
   );
   // Varios usuarios ubican la tienda por su código: se muestra «PE106 - BCS - Plaza San Miguel»
-  const siteLabel = (id?: string | null) => {
-    const x = cat.allSites.find((y) => y.id === id);
-    return x ? (x.code?.trim() ? `${x.code.trim()} - ${x.name.trim()}` : x.name.trim()) : cat.siteName(id);
-  };
+  const siteLabel = cat.siteLabel;
   const [siteQuery, setSiteQuery] = useState(() => (form.site_id ? siteLabel(form.site_id) : ''));
   // Si la lista de sedes llega después de abrir el paso, el campo toma el nombre en vez de quedarse en «—»
   useEffect(() => {
