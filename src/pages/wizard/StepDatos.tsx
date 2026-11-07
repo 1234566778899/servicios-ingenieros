@@ -72,7 +72,12 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
           cover_title: '', description: '', prev_details: DEFAULT_PREV_DETAILS, report_template_id: null,
         },
   );
-  const [siteQuery, setSiteQuery] = useState(() => (form.site_id ? cat.siteName(form.site_id) : ''));
+  // Varios usuarios ubican la tienda por su código: se muestra «PE106 - BCS - Plaza San Miguel»
+  const siteLabel = (id?: string | null) => {
+    const x = cat.allSites.find((y) => y.id === id);
+    return x ? (x.code?.trim() ? `${x.code.trim()} - ${x.name.trim()}` : x.name.trim()) : cat.siteName(id);
+  };
+  const [siteQuery, setSiteQuery] = useState(() => (form.site_id ? siteLabel(form.site_id) : ''));
   // Sede elegida al instante: al cerrar la lista (que llega junto con la selección) `form` aún tiene el valor anterior
   const siteIdRef = useRef(form.site_id);
   siteIdRef.current = form.site_id;
@@ -248,7 +253,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
 
   const show = (k: keyof Form, v: any) => {
     if (k === 'client_id') return cat.clientName(v);
-    if (k === 'site_id') return cat.siteName(v);
+    if (k === 'site_id') return siteLabel(v);
     if (k === 'lead_tech_id') return cat.userName(v);
     if (Array.isArray(v)) return v.join(', ');
     return String(v ?? '—');
@@ -258,14 +263,14 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
   const sites = cat.sites.filter((x) => x.client_id === form.client_id);
   // Hay clientes con cientos de sedes: se busca por nombre, código, distrito o dirección
   // Si el texto es el de la sede ya elegida se muestran todas (con la elegida primero) para poder cambiarla sin borrar
-  const showingCurrent = !!form.site_id && siteQuery === cat.siteName(form.site_id);
+  const showingCurrent = !!form.site_id && siteQuery === siteLabel(form.site_id);
   const siteMatches = useMemo(() => {
     if (showingCurrent) {
       const current = sites.find((x) => x.id === form.site_id);
       return [...(current ? [current] : []), ...sites.filter((x) => x.id !== form.site_id)].slice(0, 50);
     }
     const words = fold(siteQuery).split(' ').filter(Boolean);
-    return sites.filter((x) => words.every((w) => fold(`${x.name} ${x.code ?? ''} ${x.district ?? ''} ${x.province ?? ''} ${x.address ?? ''}`).includes(w))).slice(0, 50);
+    return sites.filter((x) => words.every((w) => fold(`${siteLabel(x.id)} ${(x.code ?? '').replace(/\s/g, '')} ${x.district ?? ''} ${x.province ?? ''} ${x.address ?? ''}`).includes(w))).slice(0, 50);
   }, [sites, siteQuery, showingCurrent, form.site_id]);
 
   return (
@@ -302,16 +307,16 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                     onClick: (e) => showingCurrent && e.currentTarget.select(),
                   }}
                   onChange={(e) => setSiteQuery(e.target.value)}
-                  onOpenChange={(_, d) => { if (!d.open) setSiteQuery(siteIdRef.current ? cat.siteName(siteIdRef.current) : ''); }}
+                  onOpenChange={(_, d) => { if (!d.open) setSiteQuery(siteIdRef.current ? siteLabel(siteIdRef.current) : ''); }}
                   onOptionSelect={(_, d) => {
                     if (!d.optionValue) return;
                     siteIdRef.current = d.optionValue;
                     set('site_id', d.optionValue);
-                    setSiteQuery(cat.siteName(d.optionValue));
+                    setSiteQuery(siteLabel(d.optionValue));
                   }}>
                   {siteMatches.map((x) => (
-                    <Option key={x.id} value={x.id} text={x.name}>
-                      {x.name}{(x.district || x.province) && <Caption1 style={{ marginLeft: 6, color: tokens.colorNeutralForeground3 }}>{x.district ?? x.province}</Caption1>}
+                    <Option key={x.id} value={x.id} text={siteLabel(x.id)}>
+                      {siteLabel(x.id)}{(x.district || x.province) && <Caption1 style={{ marginLeft: 6, color: tokens.colorNeutralForeground3 }}>{x.district ?? x.province}</Caption1>}
                     </Option>
                   ))}
                   {!siteMatches.length && <Option disabled value="" text="">Sin coincidencias</Option>}
