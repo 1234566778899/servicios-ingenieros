@@ -237,7 +237,7 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
       <div className={s.col}>
         <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
           Sección “Registro fotográfico” del informe · {bundle.photos.length} fotos en {groups.length} secciones. Cada sección sale con su título,
-          sus fotos (2 por fila) y la descripción debajo. Puedes renombrarlas, reordenarlas o agregar otras (p. ej. “Limpieza de letrero”).
+          la descripción y sus fotos, todas del mismo tamaño: las verticales juntas de 3 en 3 y las horizontales de 2 en 2. Puedes renombrarlas, reordenarlas o agregar otras (p. ej. “Limpieza de letrero”).
         </Caption1>
         {!groups.length && <Spinner label="Preparando secciones…" />}
         {groups.map((g, gi) => {

@@ -175,7 +175,7 @@ function pager(body: unknown[]) {
   };
 }
 
-/** Servicio sin equipos: secciones numeradas según lo que tenga y fotos por sección (2 por fila).
+/** Servicio sin equipos: secciones numeradas según lo que tenga y fotos por sección (3 verticales o 2 horizontales por fila).
  *  Las secciones sin datos no aparecen. */
 function serviceBody(m: ReportModel) {
   const has = (k: string) => m.sections.includes(k);

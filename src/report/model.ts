@@ -38,7 +38,7 @@ export interface ReportModel {
   }[];
   findings: { n: number; code: string; finding: string; cause: string; action: string; recommendation: string; priority: string }[];
   workItems: string[];
-  /** Secciones del registro fotográfico, en filas de 3 fotos (la última sin completar: se centra) */
+  /** Secciones del registro fotográfico: filas de 3 verticales o de 2 horizontales, del mismo tamaño (ver `orientationRows`) */
   photoGroups: { title: string; description: string; rows: ReportImage[][] }[];
   conclusions: string[];
   observations: string[];
@@ -49,14 +49,28 @@ export interface ReportModel {
   baseName: string;
 }
 
-/** Filas que se ajustan a sus fotos: todas a la misma altura y, juntas, el ancho de la página
- *  (sin recortar ni deformar). La altura tiene un tope, así una foto sola o una fila de verticales
- *  no ocupa media hoja; las fotos muy alargadas se encajan en una caja de proporción limitada.
+/** Foto vertical (más alta que ancha, con un margen para las casi cuadradas, que van con las horizontales) */
+export const isPortrait = (im: { width: number; height: number }) => im.height > im.width * 1.05;
+
+/** Registro fotográfico por secciones: las verticales juntas de 3 en 3 y las horizontales juntas de 2 en 2
+ *  (no se mezclan en una fila). Cada grupo conserva el orden elegido; va primero el de la primera foto. */
+export function orientationRows(list: ReportImage[]): ReportImage[][] {
+  const chunk = (xs: ReportImage[], n: number) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+  const vertical = chunk(list.filter(isPortrait), 3);
+  const horizontal = chunk(list.filter((x) => !isPortrait(x)), 2);
+  return list.length && isPortrait(list[0]) ? [...vertical, ...horizontal] : [...horizontal, ...vertical];
+}
+
+/** Cajas iguales para todas las fotos de una misma orientación, en cualquier fila: 3 verticales (3:4) o
+ *  2 horizontales (4:3) llenan el ancho, con un tope de altura. Una fila incompleta usa las mismas cajas
+ *  (se centra, no se agranda). Cada foto se encaja en su caja sin recortar ni deformar.
  *  Devuelve el ancho de cada caja y la altura de la fila, en las mismas unidades que `width`. */
 export function rowLayout(row: ReportImage[], width: number, gap: number, maxHeight: number) {
-  const ratios = row.map((i) => Math.min(2.5, Math.max(0.5, i.width / i.height)));
-  const height = Math.min(maxHeight, (width - gap * (row.length - 1)) / ratios.reduce((a, r) => a + r, 0));
-  return { height, widths: ratios.map((r) => r * height) };
+  const portrait = row.every(isPortrait);
+  const slots = Math.max(row.length, portrait ? 3 : 2);
+  const ratio = portrait ? 3 / 4 : 4 / 3;
+  const height = Math.min(maxHeight, (width - gap * (slots - 1)) / slots / ratio);
+  return { height, widths: row.map(() => height * ratio) };
 }
 
 /** Fila con el tamaño de cada foto: parte de `rowLayout` y aplica su escala; si la fila ya no entra en el ancho,
@@ -228,7 +242,7 @@ export async function buildReportModel(
   const photoGroups = await Promise.all(
     [...b.photoGroups].sort((x, y) => x.position - y.position).map(async (g) => {
       const list = b.photos.filter((p) => p.group_id === g.id).sort((x, y) => x.position - y.position);
-      const rows = rowsOf(await images(list), 3).map((r) => r.filter((x): x is ReportImage => !!x));
+      const rows = orientationRows((await images(list)).filter((x): x is ReportImage => !!x));
       return { title: g.title.toUpperCase(), description: g.description ?? '', rows };
     }),
   );
