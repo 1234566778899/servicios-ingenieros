@@ -1,6 +1,7 @@
 import { useEffect, type ReactElement, type ReactNode } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import { Placeholder } from '@tiptap/extensions';
 import { Toolbar, ToolbarButton, ToolbarDivider, Tooltip, makeStyles, mergeClasses, tokens } from '@fluentui/react-components';
 import {
   ArrowRedo20Regular, ArrowUndo20Regular, TextBold20Regular, TextBulletListLtr20Regular, TextClearFormatting20Regular,
@@ -40,7 +41,7 @@ export function RichTextEditor({ value, onChange, placeholder, disabled, extra }
   const editor = useEditor({
     extensions: [StarterKit.configure({
       heading: false, blockquote: false, code: false, codeBlock: false, horizontalRule: false, strike: false, link: false,
-    })],
+    }), Placeholder.configure({ placeholder: placeholder ?? '' })],
     content: toRichHtml(value),
     editable: !disabled,
     shouldRerenderOnTransaction: true,
@@ -53,21 +54,6 @@ export function RichTextEditor({ value, onChange, placeholder, disabled, extra }
   });
 
   useEffect(() => { editor?.setEditable(!disabled); }, [editor, disabled]);
-
-  // Placeholder sin la extensión aparte: atributo sobre el primer párrafo vacío
-  useEffect(() => {
-    if (!editor) return;
-    const dom = editor.view.dom as HTMLElement;
-    const sync = () => {
-      const first = dom.querySelector('p');
-      dom.querySelectorAll('p.is-editor-empty').forEach((p) => p.classList.remove('is-editor-empty'));
-      if (editor.isEmpty && first && placeholder) { first.classList.add('is-editor-empty'); first.setAttribute('data-placeholder', placeholder); }
-    };
-    sync();
-    editor.on('update', sync);
-    editor.on('create', sync);
-    return () => { editor.off('update', sync); editor.off('create', sync); };
-  }, [editor, placeholder]);
 
   if (!editor) return null;
   const btn = (label: string, icon: ReactElement, run: () => void, active?: boolean, enabled = true) => (
