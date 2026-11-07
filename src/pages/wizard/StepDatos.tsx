@@ -13,7 +13,7 @@ import { optionNames, useCatalogs } from '../../lib/catalogs';
 import { useRouter } from '../../lib/router';
 import { supabase } from '../../lib/supabase';
 import { addInventoryToService, loadSiteInventory, logActivity, rememberConcepts, type ServiceBundle } from '../../lib/services';
-import { coverTitle, memoria, equipmentSummary, DEFAULT_PREV_DETAILS } from '../../lib/texts';
+import { coverTitle, memoria, equipmentSummary, swapSite, DEFAULT_PREV_DETAILS } from '../../lib/texts';
 import { fmtDateTime, fold, siteAddress, today } from '../../lib/format';
 import { useNotify } from '../../lib/toast';
 import type { Service } from '../../lib/types';
@@ -81,8 +81,20 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
   // Sede elegida al instante: al cerrar la lista (que llega junto con la selección) `form` aún tiene el valor anterior
   const siteIdRef = useRef(form.site_id);
   siteIdRef.current = form.site_id;
-  const [autoTitle, setAutoTitle] = useState(!svc?.cover_title);
-  const [autoDesc, setAutoDesc] = useState(!svc?.description);
+  // Siguen automáticos (cambian con la sede, el tipo o la especialidad) mientras coincidan con lo que se generaría:
+  // antes, al crear el servicio quedaban fijos con la primera sede elegida aunque nadie los hubiera editado
+  const [autoTitle, setAutoTitle] = useState(() => {
+    if (!svc?.cover_title) return true;
+    const st = cat.allSites.find((x) => x.id === svc.site_id);
+    const eqMode = cat.hasEquipment(svc.specialty) || (!!bundle?.equipment.length && withEquipment);
+    return svc.cover_title === coverTitle(svc.service_type, svc.specialty, st, eqMode);
+  });
+  const [autoDesc, setAutoDesc] = useState(() => {
+    if (!svc?.description) return true;
+    const st = cat.allSites.find((x) => x.id === svc.site_id);
+    const eqMode = cat.hasEquipment(svc.specialty) || (!!bundle?.equipment.length && withEquipment);
+    return svc.description === memoria(svc.service_type, svc.specialty, st, eqMode);
+  });
   const [nextCode, setNextCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ server: Service; fields: (keyof Form)[] } | null>(null);
@@ -310,6 +322,11 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                   onOpenChange={(_, d) => { if (!d.open) setSiteQuery(siteIdRef.current ? siteLabel(siteIdRef.current) : ''); }}
                   onOptionSelect={(_, d) => {
                     if (!d.optionValue) return;
+                    // Título y memoria editados a mano: se cambia en ellos la tienda anterior por la nueva
+                    const prev = cat.allSites.find((x) => x.id === siteIdRef.current);
+                    const next = cat.allSites.find((x) => x.id === d.optionValue);
+                    if (!autoTitle) set('cover_title', swapSite(form.cover_title, prev, next));
+                    if (!autoDesc) set('description', swapSite(form.description, prev, next));
                     siteIdRef.current = d.optionValue;
                     set('site_id', d.optionValue);
                     setSiteQuery(siteLabel(d.optionValue));

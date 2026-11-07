@@ -55,3 +55,30 @@ export const DEFAULT_PREV_DETAILS = [
   'Señalización y delimitación del área',
   'Permiso de trabajo del centro comercial',
 ];
+
+/** Cambia la tienda anterior por la nueva en un texto ya escrito (título o memoria editados a mano):
+ *  «código nombre», nombre, dirección y código, sin distinguir mayúsculas. Si el texto estaba en
+ *  mayúsculas, el reemplazo también. Lo demás se conserva tal cual. */
+export function swapSite(text: string | null | undefined, from?: Site | null, to?: Site | null) {
+  if (!text || !from || !to || from.id === to.id) return text ?? '';
+  const t = (x?: string | null) => (x ?? '').trim();
+  const join = (sep: string, a: string, b: string) => [a, b].filter(Boolean).join(sep);
+  const pairs: [string, string][] = [
+    ...(t(from.code) ? [
+      [join(' - ', t(from.code), t(from.name)), join(' - ', t(to.code), t(to.name))],
+      [join(' ', t(from.code), t(from.name)), join(' ', t(to.code), t(to.name))],
+    ] as [string, string][] : []),
+    [t(from.name), t(to.name)],
+    [siteAddress(from), siteAddress(to)],
+    [t(from.code), t(to.code)],
+  ];
+  const usable = pairs.filter(([a, b]) => a && b && a.toLowerCase() !== b.toLowerCase()).sort((x, y) => y[0].length - x[0].length);
+  if (!usable.length) return text;
+  // Una sola pasada (lo más largo primero): lo ya reemplazado no se vuelve a reemplazar
+  const map = new Map(usable.map(([a, b]) => [a.toLowerCase(), b]));
+  const re = new RegExp(usable.map(([a]) => a.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+  return text.replace(re, (m) => {
+    const b = map.get(m.toLowerCase()) ?? m;
+    return m === m.toUpperCase() && m !== m.toLowerCase() ? b.toUpperCase() : b;
+  });
+}
