@@ -31,18 +31,22 @@ export function StepHallazgos({ bundle, reload, patch, readOnly, goTo, registerS
 
   const [dialog, setDialog] = useState<Partial<Finding> | null>(null);
   const [toDelete, setToDelete] = useState<Finding | null>(null);
-  const [manual, setManual] = useState(!!svc.conclusions);
+  const genC = conclusionsFrom(bundle.findings, codeOf);
+  const genR = recommendationsFrom(bundle.findings, codeOf);
+  // Manual solo si hay un texto guardado distinto del que se genera: antes el texto automático se guardaba al salir
+  // del paso y al volver contaba como «editado a mano», así que ya no seguía a los hallazgos nuevos
+  const sameLines = (a: string | null, b: string) => JSON.stringify(splitLines(a)) === JSON.stringify(splitLines(b));
+  const [manual, setManual] = useState(() =>
+    !!(svc.conclusions || svc.recommendations) && !(sameLines(svc.conclusions, genC) && sameLines(svc.recommendations, genR)));
   // Editadas a mano: un elemento por conclusión / recomendación (el informe las numera)
   const [conclusions, setConclusions] = useState(splitLines(svc.conclusions));
   const [recommendations, setRecommendations] = useState(splitLines(svc.recommendations));
-
-  const genC = conclusionsFrom(bundle.findings, codeOf);
-  const genR = recommendationsFrom(bundle.findings, codeOf);
   const shownC = manual ? conclusions.join('\n') : genC;
   const shownR = manual ? recommendations.join('\n') : genR;
 
-  const latest = useRef({ shownC, shownR, manual });
-  latest.current = { shownC, shownR, manual };
+  // Solo se guardan las editadas a mano; en automático quedan vacías y el informe las genera de los hallazgos del momento
+  const latest = useRef({ shownC: '', shownR: '', manual });
+  latest.current = { shownC: manual ? shownC : '', shownR: manual ? shownR : '', manual };
   const saved = useRef({ c: svc.conclusions ?? '', r: svc.recommendations ?? '' });
 
   const dirty = () => !readOnly && (saved.current.c !== latest.current.shownC || saved.current.r !== latest.current.shownR);
@@ -63,7 +67,7 @@ export function StepHallazgos({ bundle, reload, patch, readOnly, goTo, registerS
       void rememberConcepts('recomendacion', svc.specialty, fresh(r, saved.current.r)).then(() => invalidateConcepts('recomendacion'), () => {});
     }
     saved.current = { c, r };
-    notify('Conclusiones guardadas');
+    if (m) notify('Conclusiones guardadas');
     return true;
   };
 

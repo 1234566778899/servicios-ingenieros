@@ -11,7 +11,7 @@ import { useAuth } from '../lib/auth';
 import { optionNames, useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
 import { supabase, must } from '../lib/supabase';
-import { fmtDate } from '../lib/format';
+import { fmtDate, today } from '../lib/format';
 import { useNotify } from '../lib/toast';
 import type { ReportTemplate } from '../lib/types';
 
@@ -42,7 +42,7 @@ export function Plantillas() {
   const admin = can('plantillas.admin');
 
   const blank = (): Draft => ({
-    code: 'F-SGC-100-01', name: '', service_type: optionNames(cat.serviceTypes)[0] ?? null, version: 1, issued_at: new Date().toISOString().slice(0, 10),
+    code: 'F-SGC-100-01', name: '', service_type: optionNames(cat.serviceTypes)[0] ?? null, version: 1, issued_at: today(),
     status: 'Borrador', sections: SECTIONS.map(([k]) => k), notes: '',
   });
 
@@ -95,7 +95,7 @@ export function Plantillas() {
                   <MenuPopover>
                     <MenuList>
                       <MenuItem onClick={() => setDraft({ ...t })}>Editar</MenuItem>
-                      <MenuItem onClick={() => setDraft({ ...t, id: undefined, version: t.version + 1, status: 'Borrador', issued_at: new Date().toISOString().slice(0, 10) })}>Crear nueva versión</MenuItem>
+                      <MenuItem onClick={() => setDraft({ ...t, id: undefined, version: t.version + 1, status: 'Borrador', issued_at: today() })}>Crear nueva versión</MenuItem>
                       {t.status !== 'Activa' && <MenuItem onClick={() => setStatus(t, 'Activa')}>Activar</MenuItem>}
                       {t.status !== 'Inactiva' && <MenuItem onClick={() => setStatus(t, 'Inactiva')}>Desactivar</MenuItem>}
                     </MenuList>

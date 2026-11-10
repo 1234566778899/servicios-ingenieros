@@ -31,7 +31,10 @@ export function fmtSize(bytes?: number | null) {
   return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
 }
 
-export const today = () => new Date().toISOString().slice(0, 10);
+/** Fecha yyyy-mm-dd en la hora del equipo (toISOString da la fecha UTC: en Perú, desde las 7 p. m. ya es «mañana») */
+export const isoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+export const today = () => isoDate(new Date());
 
 export function pad2(n: number) {
   return String(n).padStart(2, '0');

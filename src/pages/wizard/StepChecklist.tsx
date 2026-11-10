@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Badge, Button, Caption1, Field, Input, MessageBar, MessageBarActions, MessageBarBody, Radio, RadioGroup, Table,
   TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, makeStyles, tokens,
@@ -58,16 +58,34 @@ export function StepChecklist({ bundle, reload, patch, readOnly, goTo }: StepPro
     return `${results.filter((r) => r.service_equipment_id === seId && r.result).length}/${its.length}`;
   };
 
-  const syncStatus = async (next: ChecklistResult[]) => {
-    const st = finalStatusOf(items, next.filter((r) => r.service_equipment_id === selId));
-    const before = statuses[selId];
-    if (st === before) return;
-    setStatuses((x) => ({ ...x, [selId]: st }));
-    const { error } = await supabase.from('service_equipment').update({ final_status: st }).eq('id', selId);
-    if (error) {
-      setStatuses((x) => ({ ...x, [selId]: before }));
-      notify('No se pudo guardar el estado final del equipo', 'error', error.message);
-    }
+  // Lo último que hay en pantalla, también para las respuestas que llegan del servidor en otro orden
+  const resultsRef = useRef(results);
+  const statusRef = useRef(statuses);
+  statusRef.current = statuses;
+  const show = (next: ChecklistResult[]) => { resultsRef.current = next; setResults(next); };
+  // Los cambios de estado final se guardan de uno en uno
+  const statusQueue = useRef<Promise<void>>(Promise.resolve());
+  // Cambia al limpiar: los campos de valor (no controlados) se vuelven a crear vacíos
+  const [clearGen, setClearGen] = useState(0);
+
+  /** Estado final del equipo según lo que hay ahora en pantalla (no según la respuesta que acaba de llegar:
+   *  si dos guardados terminan en orden inverso, el más antiguo dejaba el estado sin contar el último). */
+  const syncStatus = () => {
+    const seId = selId, its = items;
+    statusQueue.current = statusQueue.current.then(async () => {
+      const st = finalStatusOf(its, resultsRef.current.filter((r) => r.service_equipment_id === seId));
+      const before = statusRef.current[seId];
+      if (st === before) return;
+      statusRef.current = { ...statusRef.current, [seId]: st };
+      setStatuses((x) => ({ ...x, [seId]: st }));
+      const { error } = await supabase.from('service_equipment').update({ final_status: st }).eq('id', seId);
+      if (error) {
+        statusRef.current = { ...statusRef.current, [seId]: before };
+        setStatuses((x) => ({ ...x, [seId]: before }));
+        notify('No se pudo guardar el estado final del equipo', 'error', error.message);
+      }
+    });
+    return statusQueue.current;
   };
 
   const same = (a: ChecklistResult, b: ChecklistResult) => a.service_equipment_id === b.service_equipment_id && a.template_item_id === b.template_item_id;
@@ -75,19 +93,17 @@ export function StepChecklist({ bundle, reload, patch, readOnly, goTo }: StepPro
   /** Se marca al instante; si no se guarda, la pantalla vuelve a lo que había para no mostrar algo que no quedó en la nube. */
   const write = async (rows: ChecklistResult[]) => {
     if (!rows.length) return;
-    const previous = results.filter((r) => rows.some((x) => same(x, r)));
-    const next = [...results.filter((r) => !rows.some((x) => same(x, r))), ...rows];
-    setResults(next);
+    const previous = resultsRef.current.filter((r) => rows.some((x) => same(x, r)));
+    show([...resultsRef.current.filter((r) => !rows.some((x) => same(x, r))), ...rows]);
     const { error } = await supabase
       .from('checklist_results')
       .upsert(rows.map(({ service_equipment_id, template_item_id, result, value }) => ({ service_equipment_id, template_item_id, result, value, updated_at: new Date().toISOString() })),
         { onConflict: 'service_equipment_id,template_item_id' });
     if (error) {
-      setResults((cur) => [...cur.filter((r) => !rows.some((x) => same(x, r))), ...previous]);
+      show([...resultsRef.current.filter((r) => !rows.some((x) => same(x, r))), ...previous]);
       notify('No se pudo guardar el checklist', 'error', error.message);
-      return;
     }
-    await syncStatus(next);
+    await syncStatus();
   };
 
   const setResult = (itemId: string, result: R) =>
@@ -104,10 +120,10 @@ export function StepChecklist({ bundle, reload, patch, readOnly, goTo }: StepPro
   const clearAll = async () => {
     const { error } = await supabase.from('checklist_results').delete().eq('service_equipment_id', selId);
     if (error) throw new Error(error.message);
-    const next = results.filter((r) => r.service_equipment_id !== selId);
-    setResults(next);
+    show(resultsRef.current.filter((r) => r.service_equipment_id !== selId));
+    setClearGen((n) => n + 1);
     setConfirmClear(false);
-    await syncStatus(next);
+    await syncStatus();
   };
 
   const saveObservation = async () => {
@@ -138,7 +154,7 @@ export function StepChecklist({ bundle, reload, patch, readOnly, goTo }: StepPro
     </RadioGroup>
   );
   const valueOf = (i: (typeof items)[number]) => (
-    <Input size={narrow ? 'medium' : 'small'} style={{ width: '100%' }} disabled={readOnly} key={`${selId}-${i.id}`}
+    <Input size={narrow ? 'medium' : 'small'} style={{ width: '100%' }} disabled={readOnly} key={`${selId}-${i.id}-${clearGen}`}
       defaultValue={get(i.id)?.value ?? ''}
       placeholder={i.response_type === 'cn_value' ? `Valor${i.value_unit ? ` (${i.value_unit})` : ''}` : narrow ? 'Observación (opcional)' : '—'}
       contentAfter={i.response_type === 'cn_value' && i.value_unit ? <Caption1>{i.value_unit}</Caption1> : undefined}

@@ -16,7 +16,7 @@ import { useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
 import { supabase, fetchAll } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
-import { fmtDateTime, fmtSize, today } from '../lib/format';
+import { fmtDateTime, fmtSize, isoDate, today } from '../lib/format';
 import { useNotify } from '../lib/toast';
 import { openReportFile, saveReportFile } from '../report/generate';
 import type { Report } from '../lib/types';
@@ -36,7 +36,7 @@ export function Historial() {
   const { navigate } = useRouter();
   const notify = useNotify();
   const [q, setQ] = useState('');
-  const defaultFrom = () => new Date(Date.now() - 60 * 86400_000).toISOString().slice(0, 10);
+  const defaultFrom = () => isoDate(new Date(Date.now() - 60 * 86400_000));
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(today());
   const [clientId, setClientId] = useState('');
@@ -54,8 +54,9 @@ export function Historial() {
       .order('generated_at', { ascending: false })
       .order('id')
       .range(a, b);
-    if (from) query = query.gte('generated_at', from);
-    if (to) query = query.lte('generated_at', `${to}T23:59:59`);
+    // Los límites del día en la hora del equipo (la base guarda en UTC: sin esto, lo generado después de las 7 p. m. caía en el día siguiente)
+    if (from) query = query.gte('generated_at', new Date(`${from}T00:00:00`).toISOString());
+    if (to) query = query.lte('generated_at', new Date(`${to}T23:59:59.999`).toISOString());
     if (clientId) query = query.eq('services.client_id', clientId);
     if (siteId) query = query.eq('services.site_id', siteId);
     if (userId) query = query.eq('generated_by', userId);

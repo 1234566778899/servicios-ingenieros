@@ -139,7 +139,15 @@ export function ConceptList({ kind, specialty, items, onChange, readOnly, placeh
           if (e.key !== 'Enter') return;
           if (picked.current) picked.current = false;
           else if (draft.trim()) add(draft);
-        }}>
+        }}
+          // Lo escrito sin pulsar Enter se agrega al salir de la fila (p. ej. al ir a «Siguiente»): antes se perdía.
+          // No cuenta pasar a los botones de la fila, a la lista de sugerencias ni al diálogo de redacción.
+          onBlur={(e) => {
+            const to = e.relatedTarget as HTMLElement | null;
+            // (los eventos de un diálogo abierto desde la fila también llegan aquí: se ignoran)
+            if (!draft.trim() || !e.currentTarget.contains(e.target) || e.currentTarget.contains(to) || to?.closest('[role="listbox"], [role="dialog"], [role="alertdialog"]')) return;
+            add(draft);
+          }}>
           <Caption1 className={s.mark}>{numbered ? `${items.length + 1}.` : '•'}</Caption1>
           <ConceptInput kind={kind} specialty={specialty} value={draft} onChange={(v) => { picked.current = false; setDraft(v); }} exclude={items}
             onPick={(t) => { picked.current = true; add(t); }}

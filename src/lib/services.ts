@@ -125,6 +125,25 @@ export async function duplicateService(id: string) {
   return copy.id;
 }
 
+/** Elimina el servicio y, después, sus fotos e informes del almacenamiento (las filas se borran en cascada). */
+export async function deleteService(id: string) {
+  // Las rutas se leen antes: al borrar el servicio desaparecen con él
+  const [photos, reports] = await Promise.all([
+    fetchAll<{ storage_path: string }>((a, b) => supabase.from('photos').select('storage_path').eq('service_id', id).order('id').range(a, b)),
+    fetchAll<{ docx_path: string | null; pdf_path: string | null }>((a, b) =>
+      supabase.from('reports').select('docx_path, pdf_path').eq('service_id', id).order('id').range(a, b)),
+  ]);
+  const deleted = must(await supabase.from('services').delete().eq('id', id).select('id')) as { id: string }[];
+  // Sin permiso la base no da error: simplemente no borra nada
+  if (!deleted.length) throw new Error('No tienes permiso para eliminar este servicio o ya no existe.');
+  // Si la limpieza de archivos falla el servicio ya quedó eliminado: no se avisa como error
+  const files = reports.flatMap((r) => [r.docx_path, r.pdf_path]).filter(Boolean) as string[];
+  await Promise.allSettled([
+    ...chunk(photos.map((p) => p.storage_path), 200).map(removePhotoFiles),
+    ...chunk(files, 200).map((paths) => supabase.storage.from('reports').remove(paths)),
+  ]);
+}
+
 type Bucket = 'photos' | 'reports';
 const urlCache = new Map<string, { url: string; exp: number }>();
 // Pedidos de URL acumulados en el mismo instante: se resuelven con una sola llamada por bucket

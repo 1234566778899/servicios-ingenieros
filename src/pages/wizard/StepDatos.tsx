@@ -52,7 +52,9 @@ const LABELS: Record<keyof Form, string> = {
   description: 'Memoria descriptiva', prev_details: 'Detalles previos', report_template_id: 'Plantilla',
 };
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+// Un campo vacío es lo mismo que sin dato (se guarda como null)
+const norm = (v: unknown) => (v === '' ? null : v ?? null);
+const same = (a: unknown, b: unknown) => JSON.stringify(norm(a)) === JSON.stringify(norm(b));
 
 export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEquipment }: {
   bundle: ServiceBundle | null; reload: () => Promise<void>; readOnly: boolean; goTo: StepProps['goTo'];
@@ -193,6 +195,21 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
 
   const latest = useRef({ form, svc });
   latest.current = { form, svc };
+
+  // Al recargar el servicio (tras guardar o al volver a este paso), los campos que yo no tengo en edición toman lo
+  // que hay en la nube. Antes el formulario se quedaba con los valores viejos y el siguiente guardado pisaba, sin
+  // aviso de conflicto, lo que otro usuario hubiera cambiado entretanto.
+  const loadedSvc = useRef(svc);
+  useEffect(() => {
+    const before = loadedSvc.current;
+    loadedSvc.current = svc;
+    if (!svc || !before || before === svc || before.id !== svc.id) return;
+    const changed = FIELDS.filter((k) => same(latest.current.form[k], before[k]) && !same(svc[k], before[k]));
+    if (!changed.length) return;
+    setForm((f) => ({ ...f, ...Object.fromEntries(changed.map((k) => [k, svc[k]])) }));
+    if (changed.includes('site_id')) setSiteQuery(siteLabel(svc.site_id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [svc]);
 
   // Solo un servicio ya creado: uno nuevo sin guardar se descarta al salir (no se crea solo)
   const dirty = () => {

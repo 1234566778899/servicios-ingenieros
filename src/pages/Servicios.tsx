@@ -17,10 +17,11 @@ import { useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
 import { supabase, must } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
-import { fmtDate, shortType } from '../lib/format';
+import { fmtDate, fold, shortType } from '../lib/format';
 import { useNotify } from '../lib/toast';
+import { friendlyError } from '../lib/errors';
 import type { Service } from '../lib/types';
-import { duplicateService } from '../lib/services';
+import { deleteService, duplicateService } from '../lib/services';
 
 const STATUSES = ['En registro', 'Fotos pendientes', 'Informe generado'];
 
@@ -66,19 +67,13 @@ export function Servicios() {
     if (status) query = query.eq('status', status);
     if (from) query = query.gte('execution_date', from);
     if (to) query = query.lte('execution_date', to);
-    if (q.trim()) {
-      const t = q.trim().replace(/[,()%]/g, ' ');
-      const ors = [`code.ilike.%${t}%`, `work_order.ilike.%${t}%`];
-      const lt = t.toLowerCase();
-      const cIds = cat.allClients.filter((c) => c.name.toLowerCase().includes(lt)).map((c) => c.id);
-      const sIds = cat.allSites.filter((x) => x.name.toLowerCase().includes(lt)).map((x) => x.id);
-      if (cIds.length) ors.push(`client_id.in.(${cIds.join(',')})`);
-      if (sIds.length) ors.push(`site_id.in.(${sIds.join(',')})`);
-      query = query.or(ors.join(','));
-    }
+    // Cada palabra debe estar en el texto de búsqueda del servicio (migración 016): código, orden de trabajo,
+    // cliente, razón social y código y nombre de la sede, sin tildes. Antes se enviaban los ids de todas las sedes
+    // que coincidían y con un texto corto la consulta fallaba («Bad Request»); además no se buscaba por código de sede.
+    for (const word of fold(q).replace(/[%_\\]/g, ' ').split(/\s+/).filter(Boolean)) query = query.ilike('search_text', `%${word}%`);
     const res = await query;
     return { rows: must(res) as Row[], total: res.count ?? 0 };
-  }, [q, clientId, siteId, type, status, from, to, page, size, cat.allClients, cat.allSites]);
+  }, [q, clientId, siteId, type, status, from, to, page, size]);
 
   const sites = useMemo(() => cat.sites.filter((x) => !clientId || x.client_id === clientId), [cat.sites, clientId]);
   const total = data?.total ?? 0;
@@ -115,9 +110,12 @@ export function Servicios() {
 
   const remove = async () => {
     if (!toDelete) return;
-    const { error } = await supabase.from('services').delete().eq('id', toDelete.id);
-    if (error) notify('No se pudo eliminar', 'error', error.message);
-    else notify(`${toDelete.code} eliminado`);
+    try {
+      await deleteService(toDelete.id);
+      notify(`${toDelete.code} eliminado`);
+    } catch (e: any) {
+      notify('No se pudo eliminar', 'error', friendlyError(e));
+    }
     setToDelete(null);
     reload();
   };
