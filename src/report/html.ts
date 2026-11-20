@@ -34,7 +34,7 @@ const CSS = `
   .desc { margin: 4px 0 10px; }
   .desc p:empty::before { content: '\\00a0'; }
   .desc ul, .desc ol { margin: 6px 0 6px 18px; padding: 0; }
-  .desc li { text-align: justify; line-height: 1.4; }
+  li { text-align: justify; line-height: 1.4; }
   .nc { color: #b00020; font-weight: bold; }
   p { margin: 6px 0; text-align: justify; line-height: 1.4; }
   ul { margin: 6px 0 6px 18px; padding: 0; }

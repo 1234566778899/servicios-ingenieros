@@ -1,5 +1,5 @@
 import {
-  AlignmentType, BorderStyle, Document, Header, ImageRun, Packer, Paragraph, ShadingType, Table, TableCell,
+  AlignmentType, BorderStyle, Document, Header, ImageRun, Packer, Paragraph, ShadingType, Tab, TabStopType, Table, TableCell,
   TableRow, TextRun, VerticalAlign, WidthType,
 } from 'docx';
 import { siteAddress } from '../lib/format';
@@ -20,7 +20,7 @@ const borders = { top: border, bottom: border, left: border, right: border };
 
 const p = (text: string, opts: { bold?: boolean; size?: number; color?: string; align?: (typeof AlignmentType)[keyof typeof AlignmentType] } = {}) =>
   new Paragraph({
-    alignment: opts.align,
+    alignment: opts.align ?? AlignmentType.JUSTIFIED, // texto corrido justificado salvo que se pida otra alineación
     spacing: { after: 80 },
     children: [new TextRun({ text, bold: opts.bold, size: opts.size ?? 19, color: opts.color, font: 'Arial' })],
   });
@@ -107,15 +107,30 @@ function memoriaBlocks(m: ReportModel, n: number, pageBreakBefore: boolean) {
   ];
 }
 
-const bullets = (xs: string[]) => xs.map((d) => p(`•  ${d}`));
+/** Sangría francesa de las viñetas: el símbolo cuelga a la izquierda y todas las líneas
+ *  del texto (también las que se parten) quedan alineadas en la misma columna. */
+const LIST_INDENT = 360;
+const listFormat = {
+  indent: { left: LIST_INDENT, hanging: 240 },
+  tabStops: [{ type: TabStopType.LEFT, position: LIST_INDENT }],
+};
+/** Viñeta o número seguido de una tabulación real de Word (un "\t" dentro del texto no siempre se respeta). */
+const listMarker = (marker: string) => new TextRun({ children: [marker, new Tab()], size: 19, font: 'Arial' });
+
+const bullets = (xs: string[]) => xs.map((d) => new Paragraph({
+  alignment: AlignmentType.JUSTIFIED,
+  spacing: { after: 80 },
+  ...listFormat,
+  children: [listMarker('•'), new TextRun({ text: d, size: 19, font: 'Arial' })],
+}));
 
 /** Descripción con formato (negrita, cursiva, subrayado, listas) como párrafos del Word. */
 const richParagraphs = (value?: string | null) => richBlocks(value).map((b) => new Paragraph({
   alignment: AlignmentType.JUSTIFIED,
   spacing: { after: 80 },
-  indent: b.list ? { left: 360, hanging: 240 } : undefined,
+  ...(b.list ? listFormat : {}),
   children: [
-    ...(b.list ? [new TextRun({ text: b.list === 'bullet' ? '•\t' : `${b.index}.\t`, size: 19, font: 'Arial' })] : []),
+    ...(b.list ? [listMarker(b.list === 'bullet' ? '•' : `${b.index}.`)] : []),
     ...b.runs.map((r) => r.br
       ? new TextRun({ break: 1 })
       : new TextRun({ text: r.text, bold: r.bold, italics: r.italic, underline: r.underline ? {} : undefined, size: 19, font: 'Arial' })),
