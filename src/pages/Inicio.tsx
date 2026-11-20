@@ -7,7 +7,8 @@ import { PageHeader, Section, StatusBadge, ErrorBar } from '../components/common
 import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
 import { useRouter } from '../lib/router';
-import { supabase, must } from '../lib/supabase';
+import { supabase, must, fetchAll } from '../lib/supabase';
+import { ServiceStats, type ServiceStatRow } from '../components/ServiceStats';
 import { useAsync } from '../lib/useAsync';
 import { fmtDate, shortType, timeAgo } from '../lib/format';
 import type { Service } from '../lib/types';
@@ -36,7 +37,7 @@ export function Inicio() {
   const { data, error, loading } = useAsync(async () => {
     cat.reload();
     const since = new Date(Date.now() - 84 * 86400_000).toISOString();
-    const [stats, recent, reports, activity] = await Promise.all([
+    const [stats, recent, reports, activity, serviceRows] = await Promise.all([
       supabase.rpc('dashboard_stats'),
       supabase
         .from('services')
@@ -46,6 +47,7 @@ export function Inicio() {
         .limit(5),
       supabase.from('reports').select('generated_at').gte('generated_at', since),
       supabase.from('activity_log').select('*, services(code)').order('created_at', { ascending: false }).limit(6),
+      fetchAll<ServiceStatRow>((a, b) => supabase.from('services').select('client_id, service_type, execution_date').order('id').range(a, b)),
     ]);
     // Informes por semana: 12 cubetas de 7 días, la última es la semana actual
     const weeks = Array(12).fill(0);
@@ -58,6 +60,7 @@ export function Inicio() {
       recent: must(recent) as Service[],
       weeks,
       activity: must(activity) as any[],
+      serviceRows,
     };
   }, [profile?.id]);
 
@@ -102,6 +105,9 @@ export function Inicio() {
             </div>
           </Section>
         ))}
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <ServiceStats rows={data?.serviceRows} loading={loading} clientName={cat.clientName} />
       </div>
       <div className={s.grid}>
         <Section title="Mis servicios recientes" actions={<Link onClick={() => navigate('/servicios')}>Ver todos</Link>}>
