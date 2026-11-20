@@ -18,12 +18,18 @@ const TOP_CLIENTS = 8;
 const useStyles = makeStyles({
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' },
   grid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr', gap: '20px' } },
-  list: { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' },
+  list: { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px', padding: 0, listStyle: 'none', marginBottom: 0 },
+  item: { margin: 0 },
   row: {
-    display: 'grid', gridTemplateColumns: 'minmax(0, 38%) 1fr auto', alignItems: 'center', gap: '10px',
-    padding: '4px 0', borderRadius: '4px',
+    display: 'grid', gridTemplateColumns: 'minmax(0, 40%) 1fr auto', alignItems: 'center', gap: '10px',
+    width: '100%', padding: '4px 6px', borderRadius: '4px', boxSizing: 'border-box',
+    border: 'none', background: 'none', font: 'inherit', color: 'inherit', textAlign: 'left',
     ':hover': { backgroundColor: tokens.colorNeutralBackground1Hover },
     '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 45%) 1fr auto' },
+  },
+  clickable: {
+    cursor: 'pointer',
+    ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '-2px' },
   },
   label: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   track: { height: '12px', display: 'flex', alignItems: 'center' },
@@ -46,35 +52,59 @@ function count<T>(xs: T[], key: (x: T) => string) {
   return [...m.entries()].map(([k, n]) => ({ key: k, n })).sort((a, b) => b.n - a.n || a.key.localeCompare(b.key));
 }
 
-function Bars({ title, items, total }: { title: string; items: { label: string; n: number; other?: boolean }[]; total: number }) {
+type BarItem = { label: string; n: number; other?: boolean; filter?: Record<string, string> };
+
+function Bars({ title, items, total, onOpen }: {
+  title: string; items: BarItem[]; total: number; onOpen: (filter: Record<string, string>) => void;
+}) {
   const s = useStyles();
   const max = Math.max(1, ...items.map((i) => i.n));
   return (
     <div>
       <Text weight="semibold">{title}</Text>
-      <div className={s.list} role="list" aria-label={title}>
+      <ul className={s.list} aria-label={title}>
         {items.map((i) => {
           const pct = total ? Math.round((i.n / total) * 100) : 0;
+          const inner = (
+            <>
+              <Caption1 className={s.label}>{i.label}</Caption1>
+              <span className={s.track}>
+                <span className={`${s.bar} ${i.other ? s.barOther : ''}`} style={{ width: `${(i.n / max) * 100}%` }} />
+              </span>
+              <Caption1 className={s.value}>{i.n}</Caption1>
+            </>
+          );
+          const tip = `${i.label}: ${i.n} servicio${i.n === 1 ? '' : 's'} (${pct}%)${i.filter ? ' · clic para verlos' : ''}`;
           return (
-            <Tooltip key={i.label} relationship="description" content={`${i.label}: ${i.n} servicio${i.n === 1 ? '' : 's'} (${pct}%)`}>
-              <div className={s.row} role="listitem" tabIndex={0}>
-                <Caption1 className={s.label} title={i.label}>{i.label}</Caption1>
-                <div className={s.track}>
-                  <div className={`${s.bar} ${i.other ? s.barOther : ''}`} style={{ width: `${(i.n / max) * 100}%` }} />
-                </div>
-                <Caption1 className={s.value}>{i.n}</Caption1>
-              </div>
-            </Tooltip>
+            <li key={i.label} className={s.item}>
+              <Tooltip relationship="description" content={tip}>
+                {i.filter
+                  ? <button type="button" className={`${s.row} ${s.clickable}`} onClick={() => onOpen(i.filter!)}>{inner}</button>
+                  : <div className={s.row} tabIndex={0}>{inner}</div>}
+              </Tooltip>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 }
 
+/** Rango de fechas del período, para filtrar la lista de Servicios igual que el gráfico. */
+function periodRange(period: Period): Record<string, string> {
+  const { year, month } = today();
+  if (period === 'todo') return {};
+  if (period === 'anio') return { desde: `${year}-01-01`, hasta: `${year}-12-31` };
+  const [y, m] = month.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate(); // día 0 del mes siguiente = último día de este mes
+  return { desde: `${month}-01`, hasta: `${month}-${String(last).padStart(2, '0')}` };
+}
+
 /** Cantidad de servicios por cliente y por tipo, del período elegido. */
-export function ServiceStats({ rows, loading, clientName }: {
+export function ServiceStats({ rows, loading, clientName, onOpen }: {
   rows: ServiceStatRow[] | undefined; loading: boolean; clientName: (id: string) => string;
+  /** Abre la lista de Servicios con estos filtros (cliente, tipo, desde, hasta). */
+  onOpen: (filter: Record<string, string>) => void;
 }) {
   const s = useStyles();
   const [period, setPeriod] = useState<Period>('mes');
@@ -83,14 +113,17 @@ export function ServiceStats({ rows, loading, clientName }: {
     const { year, month } = today();
     const list = (rows ?? []).filter((r) =>
       period === 'todo' ? true : (r.execution_date ?? '').startsWith(period === 'mes' ? month : year));
-    const clients = count(list, (r) => r.client_id).map((c) => ({ label: clientName(c.key) || 'Sin cliente', n: c.n }));
-    const top: { label: string; n: number; other?: boolean }[] = clients.slice(0, TOP_CLIENTS);
+    const range = periodRange(period);
+    const clients: BarItem[] = count(list, (r) => r.client_id)
+      .map((c) => ({ label: clientName(c.key) || 'Sin cliente', n: c.n, filter: { ...range, cliente: c.key } }));
+    const top = clients.slice(0, TOP_CLIENTS);
     const rest = clients.slice(TOP_CLIENTS);
     if (rest.length) top.push({ label: `Otros clientes (${rest.length})`, n: rest.reduce((a, c) => a + c.n, 0), other: true });
     return {
       total: list.length,
       byClient: top,
-      byType: count(list, (r) => r.service_type).map((t) => ({ label: shortType(t.key), n: t.n })),
+      byType: count(list, (r) => r.service_type)
+        .map((t): BarItem => ({ label: shortType(t.key), n: t.n, filter: { ...range, tipo: t.key } })),
     };
   }, [rows, period, clientName]);
 
@@ -111,8 +144,8 @@ export function ServiceStats({ rows, loading, clientName }: {
         <Caption1 className={s.muted}>No hay servicios en este período.</Caption1>
       ) : (
         <div className={s.grid}>
-          <Bars title="Por cliente" items={byClient} total={total} />
-          <Bars title="Por tipo de servicio" items={byType} total={total} />
+          <Bars title="Por cliente" items={byClient} total={total} onOpen={onOpen} />
+          <Bars title="Por tipo de servicio" items={byType} total={total} onOpen={onOpen} />
         </div>
       )}
     </Section>

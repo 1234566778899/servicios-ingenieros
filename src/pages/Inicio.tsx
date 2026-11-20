@@ -14,12 +14,17 @@ import { fmtDate, shortType, timeAgo } from '../lib/format';
 import type { Service } from '../lib/types';
 
 const useStyles = makeStyles({
-  kpis: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' } },
+  kpis: { display: 'grid', gridTemplateColumns: 'repeat(var(--kpi-cols, 4), 1fr)', gap: '16px', marginBottom: '16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' } },
   kpi: { display: 'flex', flexDirection: 'column', gap: '2px' },
   grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
-  col: { display: 'flex', flexDirection: 'column', gap: '16px' },
+  col: { display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 },
   chart: { display: 'flex', alignItems: 'flex-end', gap: '6px', height: '140px', paddingTop: '8px' },
   bar: { flex: 1, borderRadius: '3px 3px 0 0', minHeight: '2px' },
+  narrowHide: { '@media (max-width: 600px)': { display: 'none' } },
+  narrowOnly: { display: 'none', '@media (max-width: 600px)': { display: 'block', marginTop: '4px' } },
+  // En celular la tabla cabe en la tarjeta: sin Tipo ni Fecha, el estado bajo el código, y cliente y sede bajan de línea
+  // (index.css deja las tablas en una línea con desplazamiento horizontal)
+  fitTable: { '@media (max-width: 600px)': { width: '100% !important', '& .fui-TableCell:nth-child(2)': { whiteSpace: 'normal' } } },
   act: { display: 'flex', gap: '10px', alignItems: 'center', padding: '6px 0' },
 });
 
@@ -33,20 +38,25 @@ export function Inicio() {
   const { profile, can } = useAuth();
   const { navigate } = useRouter();
   const cat = useCatalogs();
+  // Administradores y coordinadores (editan servicios de otros) ven lo del equipo: pendientes de todos,
+  // usuarios conectados y actividad. Los técnicos ven solo lo suyo.
+  const team = can('servicios.editar_otros');
 
   const { data, error, loading } = useAsync(async () => {
     cat.reload();
     const since = new Date(Date.now() - 84 * 86400_000).toISOString();
+    const services = supabase.from('services').select('*');
     const [stats, recent, reports, activity, serviceRows] = await Promise.all([
       supabase.rpc('dashboard_stats'),
-      supabase
-        .from('services')
-        .select('*')
-        .or(`lead_tech_id.eq.${profile!.id},created_by.eq.${profile!.id}`)
+      (team
+        ? services.neq('status', 'Informe generado')
+        : services.or(`lead_tech_id.eq.${profile!.id},created_by.eq.${profile!.id}`))
         .order('execution_date', { ascending: false })
-        .limit(5),
+        .limit(8),
       supabase.from('reports').select('generated_at').gte('generated_at', since),
-      supabase.from('activity_log').select('*, services(code)').order('created_at', { ascending: false }).limit(6),
+      team
+        ? supabase.from('activity_log').select('*, services(code)').order('created_at', { ascending: false }).limit(6)
+        : Promise.resolve({ data: [], error: null }),
       fetchAll<ServiceStatRow>((a, b) => supabase.from('services').select('client_id, service_type, execution_date').order('id').range(a, b)),
     ]);
     // Informes por semana: 12 cubetas de 7 días, la última es la semana actual
@@ -62,7 +72,7 @@ export function Inicio() {
       activity: must(activity) as any[],
       serviceRows,
     };
-  }, [profile?.id]);
+  }, [profile?.id, team]);
 
   const st = data?.stats ?? {};
   const connected = cat.users.filter((u) => u.active && u.last_seen_at && Date.now() - new Date(u.last_seen_at).getTime() < 5 * 60_000).length;
@@ -73,8 +83,9 @@ export function Inicio() {
     { label: 'Servicios en curso', value: st.en_curso, note: `${st.sin_fotos ?? 0} sin fotografías completas` },
     { label: 'Informes este mes', value: st.informes_mes, note: `${diffMes >= 0 ? '+' : ''}${diffMes} vs. mes anterior` },
     { label: 'Equipos atendidos este mes', value: st.equipos_mes, note: `en ${st.servicios_mes ?? 0} servicios` },
-    { label: 'Usuarios conectados', value: connected, note: `de ${st.usuarios_activos ?? 0} activos` },
+    ...(team ? [{ label: 'Usuarios conectados', value: connected, note: `de ${st.usuarios_activos ?? 0} activos` }] : []),
   ];
+  const openServices = (filter: Record<string, string>) => navigate(`/servicios?${new URLSearchParams(filter)}`);
 
   return (
     <>
@@ -93,7 +104,7 @@ export function Inicio() {
         }
       />
       <ErrorBar error={error} />
-      <div className={s.kpis}>
+      <div className={s.kpis} style={{ ['--kpi-cols' as string]: kpis.length }}>
         {kpis.map((k) => (
           <Section key={k.label}>
             <div className={s.kpi}>
@@ -106,38 +117,47 @@ export function Inicio() {
           </Section>
         ))}
       </div>
-      <div style={{ marginBottom: 16 }}>
-        <ServiceStats rows={data?.serviceRows} loading={loading} clientName={cat.clientName} />
-      </div>
       <div className={s.grid}>
-        <Section title="Mis servicios recientes" actions={<Link onClick={() => navigate('/servicios')}>Ver todos</Link>}>
-          <Table size="small">
+        <div className={s.col}>
+        <Section
+          title={team ? 'Servicios pendientes' : 'Mis servicios recientes'}
+          subtitle={team ? 'de todo el equipo, sin informe' : undefined}
+          actions={<Link onClick={() => navigate('/servicios')}>Ver todos</Link>}
+        >
+          <Table size="small" className={s.fitTable}>
             <TableHeader>
               <TableRow>
                 <TableHeaderCell>Código</TableHeaderCell>
                 <TableHeaderCell>Cliente · Sede</TableHeaderCell>
-                <TableHeaderCell>Tipo</TableHeaderCell>
-                <TableHeaderCell>Fecha</TableHeaderCell>
-                <TableHeaderCell>Estado</TableHeaderCell>
+                <TableHeaderCell className={s.narrowHide}>Tipo</TableHeaderCell>
+                <TableHeaderCell className={s.narrowHide}>Fecha</TableHeaderCell>
+                <TableHeaderCell className={s.narrowHide}>Estado</TableHeaderCell>
               </TableRow>
             </TableHeader>
             <TableBody>
               {data?.recent.map((r) => (
                 <TableRow key={r.id} onClick={() => navigate(`/servicios/${r.id}`)} style={{ cursor: 'pointer' }}>
-                  <TableCell><Link>{r.code}</Link></TableCell>
+                  <TableCell>
+                    <Link>{r.code}</Link>
+                    <span className={s.narrowOnly}><StatusBadge status={r.status} /></span>
+                  </TableCell>
                   <TableCell>{cat.clientName(r.client_id)} · {cat.siteName(r.site_id)}</TableCell>
-                  <TableCell>{shortType(r.service_type)}</TableCell>
-                  <TableCell>{fmtDate(r.execution_date)}</TableCell>
-                  <TableCell><StatusBadge status={r.status} /></TableCell>
+                  <TableCell className={s.narrowHide}>{shortType(r.service_type)}</TableCell>
+                  <TableCell className={s.narrowHide}>{fmtDate(r.execution_date)}</TableCell>
+                  <TableCell className={s.narrowHide}><StatusBadge status={r.status} /></TableCell>
                 </TableRow>
               ))}
               {data && data.recent.length === 0 && (
-                <TableRow><TableCell colSpan={5}><Caption1>Aún no tienes servicios registrados.</Caption1></TableCell></TableRow>
+                <TableRow><TableCell colSpan={5}><Caption1>
+                  {team ? 'No hay servicios pendientes: todos tienen su informe.' : 'Aún no tienes servicios registrados.'}
+                </Caption1></TableCell></TableRow>
               )}
             </TableBody>
           </Table>
           {loading && !data && <Spinner size="small" style={{ padding: 24 }} />}
         </Section>
+        <ServiceStats rows={data?.serviceRows} loading={loading} clientName={cat.clientName} onOpen={openServices} />
+        </div>
         <div className={s.col}>
           <Section title="Informes por semana" subtitle="últimas 12">
             <div className={s.chart} role="img" aria-label="Informes generados por semana">
@@ -154,7 +174,7 @@ export function Inicio() {
               ))}
             </div>
           </Section>
-          <Section title="Actividad del equipo">
+          {team && <Section title="Actividad del equipo">
             {data?.activity.map((a) => (
               <div key={a.id} className={s.act}>
                 <Avatar name={cat.userName(a.user_id)} size={28} />
@@ -169,7 +189,7 @@ export function Inicio() {
             ))}
             {loading && !data && <Spinner size="small" style={{ padding: 16 }} />}
             {data && data.activity.length === 0 && <Caption1>Sin actividad reciente.</Caption1>}
-          </Section>
+          </Section>}
         </div>
       </div>
     </>

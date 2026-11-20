@@ -38,17 +38,20 @@ export function Servicios() {
   const { can, profile } = useAuth();
   const cat = useCatalogs();
   const notify = useNotify();
-  const initialQ = new URLSearchParams(path.split('?')[1] ?? '').get('q') ?? '';
+  // Filtros iniciales desde la dirección (?q=, ?cliente=, ?tipo=, ?estado=, ?desde=, ?hasta=): búsqueda global y gráficos de Inicio
+  const params = new URLSearchParams(path.split('?')[1] ?? '');
+  const initial = (k: string) => params.get(k) ?? '';
+  const initialQ = initial('q');
 
   // Lo que se escribe (typed) se aplica como filtro (q) 300 ms después de la última tecla: una consulta por búsqueda, no por letra
   const [typed, setTyped] = useState(initialQ);
   const [q, setQ] = useState(initialQ);
-  const [clientId, setClientId] = useState('');
+  const [clientId, setClientId] = useState(() => initial('cliente'));
   const [siteId, setSiteId] = useState('');
-  const [type, setType] = useState('');
-  const [status, setStatus] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [type, setType] = useState(() => initial('tipo'));
+  const [status, setStatus] = useState(() => initial('estado'));
+  const [from, setFrom] = useState(() => initial('desde'));
+  const [to, setTo] = useState(() => initial('hasta'));
   const [page, setPage] = useState(0);
   const [size, setSize] = usePageSize('servicios', 15);
   const [toDelete, setToDelete] = useState<Service | null>(null);
