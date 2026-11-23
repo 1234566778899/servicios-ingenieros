@@ -1,9 +1,10 @@
 import { lazy, Suspense } from 'react';
-import { FluentProvider, Toaster, webLightTheme } from '@fluentui/react-components';
+import { FluentProvider, Toaster, webDarkTheme, webLightTheme } from '@fluentui/react-components';
 import { AuthProvider, useAuth } from './lib/auth';
 import { CatalogsProvider } from './lib/catalogs';
 import { ConnectionProvider } from './lib/connection';
 import { RouterProvider, match, useRouter } from './lib/router';
+import { ThemeProvider, useTheme } from './lib/theme';
 import { Shell } from './components/Shell';
 import { Loading } from './components/common';
 import { CambiarContrasena, Login, Restablecer } from './pages/Login';
@@ -78,7 +79,16 @@ function Gate() {
 
 export function App() {
   return (
-    <FluentProvider theme={webLightTheme} style={{ height: '100%' }}>
+    <ThemeProvider>
+      <Themed />
+    </ThemeProvider>
+  );
+}
+
+function Themed() {
+  const { dark } = useTheme();
+  return (
+    <FluentProvider theme={dark ? webDarkTheme : webLightTheme} style={{ height: '100%' }}>
       <ConnectionProvider>
         <AuthProvider>
           <RouterProvider>

@@ -45,6 +45,10 @@ export function ReportPreview({ html, editable, onScale, onSwap, className }: {
     if (!win || !doc || !docs[i].html || docs[i].html !== latest.current || docs[i].v !== version.current) return;
     win.scrollTo(0, scrollTop.current);
     win.addEventListener('scroll', () => { if (activeRef.current === i) scrollTop.current = win.scrollY; });
+    // Fondo de la vista previa: el del contenedor de la app (sigue el tema claro u oscuro); las hojas siguen blancas
+    const bg = doc.createElement('style');
+    bg.textContent = 'body { background: transparent !important; }';
+    doc.head.appendChild(bg);
     if (editable) {
       attachResize(win, doc, (id, s) => onScaleRef.current(id, s));
       attachSwap(win, doc, (a, b) => onSwapRef.current?.(a, b));
@@ -58,7 +62,8 @@ export function ReportPreview({ html, editable, onScale, onSwap, className }: {
         <iframe key={i} ref={frames[i]} title={i === active ? 'Vista previa del informe' : 'Vista previa (cargando)'}
           srcDoc={docs[i].html && `${docs[i].html}<!-- v${docs[i].v} -->`} sandbox="allow-same-origin" onLoad={() => onLoad(i)} aria-hidden={i !== active}
           style={{
-            position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: 'transparent',
+            // colorScheme light: igual que el documento del informe; si no coinciden, en modo oscuro el navegador pinta el iframe opaco
+            position: 'absolute', inset: 0, width: '100%', height: '100%', border: 0, background: 'transparent', colorScheme: 'light',
             visibility: i === active ? 'visible' : 'hidden', pointerEvents: i === active ? 'auto' : 'none',
           }} />
       ))}

@@ -23,7 +23,7 @@ const SECTIONS: [string, string][] = [
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' },
   preview: {
-    border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, padding: '12px', backgroundColor: '#fff',
+    border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, padding: '12px', backgroundColor: '#fff', color: '#242424', // hoja de papel: mismos colores en tema claro u oscuro
     display: 'flex', flexDirection: 'column', gap: '6px', minHeight: '130px',
   },
   form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
@@ -82,7 +82,7 @@ export function Plantillas() {
         {cat.reportTemplates.map((t) => (
           <Card key={t.id}>
             <div className={s.preview}>
-              <Caption1 style={{ color: tokens.colorBrandForeground1, fontWeight: 600 }}>nórdico ingenieros · {t.code} v{String(t.version).padStart(2, '0')}</Caption1>
+              <Caption1 style={{ color: '#0f6cbd', fontWeight: 600 }}>nórdico ingenieros · {t.code} v{String(t.version).padStart(2, '0')}</Caption1>
               <Text weight="semibold" size={200}>SERVICIO DE {(t.service_type ?? t.name).toUpperCase()}</Text>
               <Caption1>{SECTIONS.filter(([k]) => t.sections.includes(k)).map(([, l]) => l).join(' · ')}</Caption1>
             </div>

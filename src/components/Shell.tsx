@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
 import {
-  Avatar, Button, Caption1, mergeClasses, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, NavDrawer,
+  Avatar, Button, Caption1, mergeClasses, Menu, MenuDivider, MenuGroup, MenuGroupHeader, MenuItem, MenuList, MenuPopover, MenuTrigger, NavDrawer,
   NavDrawerBody, NavItem, NavSectionHeader, Text, makeStyles, tokens, MessageBar,
   MessageBarBody, MessageBarActions,
 } from '@fluentui/react-components';
@@ -8,8 +8,11 @@ import {
   Home20Regular, Home20Filled, WrenchScrewdriver20Regular, WrenchScrewdriver20Filled, Box20Regular, Box20Filled,
   History20Regular, History20Filled, People20Regular, People20Filled, ShieldKeyhole20Regular, ShieldKeyhole20Filled,
   BookTemplate20Regular, BookTemplate20Filled, SignOut20Regular, ChevronDown16Regular, bundleIcon, Navigation20Regular,
+  WeatherSunny20Regular, WeatherMoon20Regular, DesktopMac20Regular, Checkmark20Regular,
 } from '@fluentui/react-icons';
 import logo from '../assets/logo.png';
+import logoWhite from '../assets/logo-white.png';
+import { useTheme, type ThemeMode } from '../lib/theme';
 import { useAuth } from '../lib/auth';
 import { useRouter } from '../lib/router';
 import { useConnection } from '../lib/connection';
@@ -38,6 +41,12 @@ const useStyles = makeStyles({
   userBtn: { display: 'flex', alignItems: 'center', gap: '8px' },
 });
 
+const THEMES: { mode: ThemeMode; label: string; icon: ReactElement }[] = [
+  { mode: 'light', label: 'Claro', icon: <WeatherSunny20Regular /> },
+  { mode: 'dark', label: 'Oscuro', icon: <WeatherMoon20Regular /> },
+  { mode: 'system', label: 'Según el sistema', icon: <DesktopMac20Regular /> },
+];
+
 const ADMIN_ITEMS = [
   { value: '/usuarios', label: 'Usuarios', icon: <PeopleI />, perm: 'usuarios.admin' },
   { value: '/roles', label: 'Roles y permisos', icon: <Shield />, perm: 'usuarios.admin' },
@@ -51,6 +60,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const conn = useConnection();
   const cat = useCatalogs();
   const compact = useCompact();
+  const theme = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   // Al navegar en modo compacto se cierra el menú
   useEffect(() => setMenuOpen(false), [path]);
@@ -75,7 +85,7 @@ export function Shell({ children }: { children: ReactNode }) {
       >
         <NavDrawerBody>
           <div style={{ padding: '14px 12px 18px' }}>
-            <img src={logo} alt="Nórdico Ingenieros" style={{ width: '100%', maxWidth: 200, display: 'block' }} />
+            <img src={theme.dark ? logoWhite : logo} alt="Nórdico Ingenieros" style={{ width: '100%', maxWidth: 200, display: 'block' }} />
             <Caption1 style={{ color: tokens.colorNeutralForeground3, marginLeft: 4 }}>Informes técnicos</Caption1>
           </div>
           <NavItem value="/" icon={<Home />}>Inicio</NavItem>
@@ -106,6 +116,17 @@ export function Shell({ children }: { children: ReactNode }) {
             <MenuPopover>
               <MenuList>
                 <MenuItem disabled>DNI {profile?.dni}{profile?.email ? ` · ${profile.email}` : ''}</MenuItem>
+                <MenuDivider />
+                <MenuGroup>
+                  <MenuGroupHeader>Tema</MenuGroupHeader>
+                  {THEMES.map((t) => (
+                    <MenuItem key={t.mode} icon={t.icon} persistOnClick onClick={() => theme.setMode(t.mode)}
+                      secondaryContent={theme.mode === t.mode ? <Checkmark20Regular /> : undefined}>
+                      {t.label}
+                    </MenuItem>
+                  ))}
+                </MenuGroup>
+                <MenuDivider />
                 <MenuItem icon={<SignOut20Regular />} onClick={signOut}>Cerrar sesión</MenuItem>
               </MenuList>
             </MenuPopover>

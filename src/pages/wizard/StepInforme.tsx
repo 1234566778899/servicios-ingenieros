@@ -27,7 +27,7 @@ const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '420px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   col: { display: 'flex', flexDirection: 'column', gap: '16px' },
   secRow: { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '6px 0', borderBottom: `1px solid ${tokens.colorNeutralStroke3}` },
-  preview: { width: '100%', height: 'calc(100vh - 330px)', minHeight: '480px', border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, backgroundColor: '#e8e8e8' },
+  preview: { width: '100%', height: 'calc(100vh - 330px)', minHeight: '480px', border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground4 },
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' },
   file: { display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, marginTop: '8px' },
 });
