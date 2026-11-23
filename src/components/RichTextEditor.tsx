@@ -32,8 +32,8 @@ const useStyles = makeStyles({
 });
 
 /** Editor de texto con formato (negrita, cursiva, subrayado, listas). Devuelve HTML limpio. */
-export function RichTextEditor({ value, onChange, placeholder, disabled, extra }: {
-  value: string; onChange: (html: string) => void; placeholder?: string; disabled?: boolean;
+export function RichTextEditor({ value, onChange, placeholder, disabled, extra, autoFocus }: {
+  value: string; onChange: (html: string) => void; placeholder?: string; disabled?: boolean; autoFocus?: boolean;
   /** Botones adicionales al final de la barra (p. ej. textos frecuentes) */
   extra?: (insert: (text: string) => void) => ReactNode;
 }) {
@@ -44,6 +44,7 @@ export function RichTextEditor({ value, onChange, placeholder, disabled, extra }
     }), Placeholder.configure({ placeholder: placeholder ?? '' })],
     content: toRichHtml(value),
     editable: !disabled,
+    autofocus: autoFocus ? 'end' : false,
     shouldRerenderOnTransaction: true,
     editorProps: {
       attributes: { 'aria-label': placeholder ?? 'Descripción' },

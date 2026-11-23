@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { supabase, fetchAll } from './supabase';
+import { storeParts } from './texts';
 import type { CatalogOption, Client, EquipmentType, Profile, ReportTemplate, Site } from './types';
 
 interface Catalogs {
@@ -78,7 +79,7 @@ export function CatalogsProvider({ children }: { children: ReactNode }) {
         siteName: by(sites, 'name'),
         siteLabel: (id) => {
           const x = id ? sites.find((s) => s.id === id) : undefined;
-          return x ? (x.code?.trim() ? `${x.code.trim()} - ${x.name.trim()}` : x.name.trim()) : '—';
+          return x ? storeParts(x).join(' - ') : '—';
         },
         typeName: by(equipmentTypes, 'name'),
         userName: by(users, 'full_name'),

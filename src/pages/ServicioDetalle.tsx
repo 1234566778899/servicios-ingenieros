@@ -10,7 +10,7 @@ import { PhotoThumb } from '../components/PhotoThumb';
 import { PhotoLightbox } from '../components/PhotoLightbox';
 import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
-import { useRouter } from '../lib/router';
+import { servicesUrl, useRouter } from '../lib/router';
 import { supabase } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
 import { equipmentLabel, loadServiceBundle, usesEquipment } from '../lib/services';
@@ -121,7 +121,7 @@ export function ServicioDetalle({ id }: { id: string }) {
   return (
     <>
       <PageHeader
-        crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Servicios', to: '/servicios' }, { label: svc.code }]}
+        crumbs={[{ label: 'Inicio', to: '/' }, { label: 'Servicios', to: servicesUrl() }, { label: svc.code }]}
         title={`${svc.code} · ${cat.siteName(svc.site_id)}`}
         badges={<><StatusBadge status={svc.status} />{!canEdit && <Badge appearance="outline" color="warning">Solo lectura</Badge>}</>}
         actions={

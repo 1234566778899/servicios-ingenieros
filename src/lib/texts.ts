@@ -9,8 +9,17 @@ const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 /** Sin guiones: «FO - SJL Mall Aventura» → «FO SJL Mall Aventura» */
 export const noDashes = (s: string) => s.replace(/\s*-\s*/g, ' ').replace(/\s+/g, ' ').trim();
 
+/** Código y nombre de la tienda; sin el código si el nombre ya empieza con él («BK058» + «BK058 - Burger King» → solo el nombre) */
+export function storeParts(site?: Pick<Site, 'code' | 'name'> | null): string[] {
+  const code = site?.code?.trim() ?? '';
+  const name = site?.name?.trim() ?? '';
+  const key = (s: string) => s.replace(/[\s-]/g, '').toUpperCase();
+  const repeated = !!code && key(name).startsWith(key(code)) && !/[A-Z0-9]/i.test(name.replace(/\s/g, '').charAt(code.replace(/\s/g, '').length));
+  return [repeated ? '' : code, name].filter(Boolean);
+}
+
 /** Tienda para el título de portada: código y nombre sin guiones, como la identifica el cliente («PE210 FO SJL MALL AVENTURA») */
-export const storeTitle = (site?: Site | null) => noDashes([site?.code?.trim(), site?.name?.trim()].filter(Boolean).join(' ')).toUpperCase();
+export const storeTitle = (site?: Site | null) => noDashes(storeParts(site).join(' ')).toUpperCase();
 
 export function coverTitle(serviceType: string, specialty: string, site?: Site | null, withEquipment = true) {
   const what = withEquipment ? `DE EQUIPO DE ${specialty.toUpperCase()}` : `DE ${specialty.toUpperCase()}`;

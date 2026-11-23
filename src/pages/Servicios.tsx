@@ -14,7 +14,7 @@ import { Pager, usePageSize } from '../components/Pager';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
-import { useRouter } from '../lib/router';
+import { rememberServicesUrl, useRouter } from '../lib/router';
 import { supabase, must } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
 import { fmtDate, fold, shortType } from '../lib/format';
@@ -47,12 +47,12 @@ export function Servicios() {
   const [typed, setTyped] = useState(initialQ);
   const [q, setQ] = useState(initialQ);
   const [clientId, setClientId] = useState(() => initial('cliente'));
-  const [siteId, setSiteId] = useState('');
+  const [siteId, setSiteId] = useState(() => initial('sede'));
   const [type, setType] = useState(() => initial('tipo'));
   const [status, setStatus] = useState(() => initial('estado'));
   const [from, setFrom] = useState(() => initial('desde'));
   const [to, setTo] = useState(() => initial('hasta'));
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(() => Math.max(0, (Number(initial('pagina')) || 1) - 1));
   const [size, setSize] = usePageSize('servicios', 15);
   const [toDelete, setToDelete] = useState<Service | null>(null);
   const [busy, setBusy] = useState(false);
@@ -124,6 +124,24 @@ export function Servicios() {
   };
 
   const set = <T,>(fn: (v: T) => void) => (v: T) => { fn(v); setPage(0); };
+
+  // La página y los filtros quedan en la dirección: al volver desde un servicio (Atrás o «Servicios») se ve la misma página
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    if (clientId) p.set('cliente', clientId);
+    if (siteId) p.set('sede', siteId);
+    if (type) p.set('tipo', type);
+    if (status) p.set('estado', status);
+    if (from) p.set('desde', from);
+    if (to) p.set('hasta', to);
+    if (page > 0) p.set('pagina', String(page + 1));
+    const qs = p.toString();
+    const url = `/servicios${qs ? `?${qs}` : ''}`;
+    // replaceState no dispara hashchange: la pantalla no se vuelve a montar
+    if (window.location.hash !== `#${url}`) history.replaceState(history.state, '', `#${url}`);
+    rememberServicesUrl(url);
+  }, [q, clientId, siteId, type, status, from, to, page]);
 
   useEffect(() => {
     if (typed === q) return;

@@ -23,6 +23,15 @@ export function RouterProvider({ children }: { children: ReactNode }) {
 
 export const useRouter = () => useContext(RouterCtx);
 
+// Última dirección de la lista de servicios (página y filtros): «Servicios» en las migas y «Cancelar» vuelven a ella
+const SERVICES_KEY = 'lastServicesUrl';
+export function servicesUrl() {
+  try { return sessionStorage.getItem(SERVICES_KEY) || '/servicios'; } catch { return '/servicios'; }
+}
+export function rememberServicesUrl(url: string) {
+  try { sessionStorage.setItem(SERVICES_KEY, url); } catch { /* sin almacenamiento */ }
+}
+
 /** Compara "/servicios/:id" con la ruta actual y devuelve los parámetros o null. */
 export function match(pattern: string, path: string): Record<string, string> | null {
   const p = pattern.split('/').filter(Boolean);

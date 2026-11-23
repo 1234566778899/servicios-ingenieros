@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Badge, Button, Caption1, Field, Input, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Spinner, Text, ToolbarButton, Tooltip,
+  Badge, Button, Caption1, Field, Input, Link, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Spinner, Text, ToolbarButton, Tooltip,
   makeStyles, mergeClasses, tokens,
 } from '@fluentui/react-components';
 import {
@@ -24,8 +24,24 @@ import type { StepProps } from './ServicioWizard';
 
 const useStyles = makeStyles({
   col: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  // Título y, debajo, la descripción con formato (en el informe va en ese mismo orden, antes de las fotos)
-  meta: { display: 'grid', gridTemplateColumns: '1fr', gap: '12px', marginBottom: '12px' },
+  meta: { marginBottom: '12px' },
+  // Cabecera de la sección: número + título editable en el mismo lugar + acciones
+  head: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' },
+  num: { fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightSemibold },
+  title: {
+    flex: '1 1 240px', minWidth: 0, fontFamily: 'inherit', fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground1, backgroundColor: 'transparent', padding: '4px 6px', marginLeft: '-6px',
+    border: '1px solid transparent', borderRadius: tokens.borderRadiusMedium, outlineStyle: 'none',
+    ':hover:not(:disabled)': { border: `1px solid ${tokens.colorNeutralStroke1}` },
+    ':focus': { border: `1px solid ${tokens.colorBrandStroke1}`, backgroundColor: tokens.colorNeutralBackground1 },
+  },
+  headTools: { display: 'flex', alignItems: 'center', gap: '4px' },
+  // Botones de cada foto: visibles al pasar el mouse o con el foco; en pantallas táctiles siempre
+  slotHover: {
+    '& .slot-tools': { opacity: 0, transitionProperty: 'opacity', transitionDuration: tokens.durationFaster },
+    '&:hover .slot-tools, &:focus-within .slot-tools': { opacity: 1 },
+    '@media (hover: none)': { '& .slot-tools': { opacity: 1 } },
+  },
   tiles: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '12px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr 1fr', gap: '8px' } },
   slot: {
     border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium, padding: '6px',
@@ -64,6 +80,8 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
   const [newTitle, setNewTitle] = useState('');
   // Ediciones de título / descripción aún sin guardar (se guardan al salir del campo)
   const [drafts, setDrafts] = useState<Record<string, { title?: string; description?: string }>>({});
+  // Secciones sin descripción en las que se pulsó «Agregar descripción»
+  const [descOpen, setDescOpen] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
   const target = useRef('');
   const seeded = useRef(false);
@@ -235,33 +253,36 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
       <input ref={fileRef} type="file" accept="image/jpeg,image/png" multiple hidden
         onChange={(e) => { upload(target.current, [...(e.target.files ?? [])]); e.target.value = ''; }} />
       <div className={s.col}>
-        <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
-          Sección “Registro fotográfico” del informe · {bundle.photos.length} fotos en {groups.length} secciones. Cada sección sale con su título,
-          la descripción y sus fotos, todas del mismo tamaño: las verticales juntas de 3 en 3 y las horizontales de 2 en 2. Puedes renombrarlas, reordenarlas o agregar otras (p. ej. “Limpieza de letrero”).
-        </Caption1>
         {!groups.length && <Spinner label="Preparando secciones…" />}
         {groups.map((g, gi) => {
           const list = photosOf(g.id);
           const d = drafts[g.id] ?? {};
           return (
             <div key={g.id} {...paste.zone(g.id)}>
-            <Section
-              title={`${gi + 1}. ${g.title}`}
-              actions={!readOnly && (
-                <>
-                  <Badge appearance="tint" color={list.length ? 'success' : 'warning'}>{list.length} {list.length === 1 ? 'foto' : 'fotos'}</Badge>
-                  <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Subir sección" disabled={gi === 0} onClick={() => moveGroup(gi, -1)} />
-                  <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label="Bajar sección" disabled={gi === groups.length - 1} onClick={() => moveGroup(gi, 1)} />
-                  <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label="Quitar sección" onClick={() => setGroupToDelete(g)} />
-                </>
-              )}>
+            <Section>
               <div className={s.meta} onBlur={() => saveGroup(g)}>
-                <Field label="Título de la sección">
-                  <Input value={d.title ?? g.title} disabled={readOnly}
-                    onChange={(_, x) => setDrafts((all) => ({ ...all, [g.id]: { ...all[g.id], title: x.value } }))} />
-                </Field>
+                <div className={s.head}>
+                  <span className={s.num}>{gi + 1}.</span>
+                  {/* El título se edita en la misma cabecera; si se deja vacío se conserva el anterior */}
+                  <input className={s.title} aria-label="Título de la sección" value={d.title ?? g.title} disabled={readOnly}
+                    title={readOnly ? undefined : 'Clic para editar el título'}
+                    onChange={(e) => { const v = e.target.value; setDrafts((all) => ({ ...all, [g.id]: { ...all[g.id], title: v } })); }}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+                  {!readOnly && (
+                    <div className={s.headTools}>
+                      <Badge appearance="tint" color={list.length ? 'success' : 'warning'}>{list.length} {list.length === 1 ? 'foto' : 'fotos'}</Badge>
+                      <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Subir sección" disabled={gi === 0} onClick={() => moveGroup(gi, -1)} />
+                      <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label="Bajar sección" disabled={gi === groups.length - 1} onClick={() => moveGroup(gi, 1)} />
+                      <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label="Quitar sección" onClick={() => setGroupToDelete(g)} />
+                    </div>
+                  )}
+                </div>
+                {/* Sin descripción solo se muestra el enlace; el editor aparece al pulsarlo */}
+                {isRichEmpty(g.description ?? '') && d.description === undefined && !descOpen.has(g.id) ? (
+                  !readOnly && <Link onClick={() => setDescOpen((o) => new Set(o).add(g.id))}>+ Agregar descripción</Link>
+                ) : (
                 <Field label="Descripción">
-                  <RichTextEditor disabled={readOnly} value={g.description ?? ''}
+                  <RichTextEditor disabled={readOnly} value={g.description ?? ''} autoFocus={descOpen.has(g.id) && isRichEmpty(g.description ?? '')}
                     placeholder="Ej.: Se hace la inspección del tablero, llaves y rotulado…"
                     onChange={(v) => setDrafts((all) => ({ ...all, [g.id]: { ...all[g.id], description: v } }))}
                     extra={(insert) => frequent.length > 0 && (
@@ -279,32 +300,33 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
                       </Menu>
                     )} />
                 </Field>
+                )}
               </div>
               {uploading === g.id && <Spinner size="tiny" label={`Subiendo ${Math.min(progress.done + 1, progress.total)} de ${progress.total}…`} style={{ marginBottom: 8 }} />}
               <div className={s.tiles}>
                 {list.map((p, i) => (
-                  <div key={p.id} className={s.slot} {...dnd.tile(p.id, g.id, i)}>
+                  <div key={p.id} className={mergeClasses(s.slot, s.slotHover)} {...dnd.tile(p.id, g.id, i)}>
                     <button className={s.thumbBtn} onClick={() => setViewer(p)} aria-label={`Ver foto ${i + 1}`}>
                       <PhotoThumb path={p.storage_path} alt={p.caption ?? ''} height={120} annotations={p.annotations} />
                     </button>
+                    {/* Comentario solo si hay; abajo el número de la foto y sus botones */}
+                    {p.caption && (
+                      <Caption1 truncate wrap={false} style={{ minWidth: 0 }} title={p.caption}>{p.caption}</Caption1>
+                    )}
                     <div className={s.slotBar}>
-                      <Tooltip content="Mover antes" relationship="label">
-                        <Button size="small" appearance="subtle" icon={<ChevronLeft20Regular />} disabled={readOnly || i === 0} onClick={() => move(p, g.id, i)} />
-                      </Tooltip>
-                      <Caption1 truncate wrap={false} style={{ flex: 1, textAlign: 'center', minWidth: 0 }} title={p.caption ?? ''}>
-                        {i + 1}. {p.caption || 'Sin comentario'}
-                      </Caption1>
-                      <Tooltip content="Mover después" relationship="label">
-                        <Button size="small" appearance="subtle" icon={<ChevronRight20Regular />} disabled={readOnly || i === list.length - 1} onClick={() => move(p, g.id, i + 2)} />
-                      </Tooltip>
+                      <Caption1 style={{ color: tokens.colorNeutralForeground3, paddingLeft: 4 }}>{i + 1}</Caption1>
                       {!readOnly && (
-
-                        <Tooltip content="Eliminar foto" relationship="label">
-
-                          <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => setToDelete(p)} />
-
-                        </Tooltip>
-
+                        <div className="slot-tools" style={{ display: 'flex' }}>
+                          <Tooltip content="Mover antes" relationship="label">
+                            <Button size="small" appearance="subtle" icon={<ChevronLeft20Regular />} disabled={i === 0} onClick={() => move(p, g.id, i)} />
+                          </Tooltip>
+                          <Tooltip content="Mover después" relationship="label">
+                            <Button size="small" appearance="subtle" icon={<ChevronRight20Regular />} disabled={i === list.length - 1} onClick={() => move(p, g.id, i + 2)} />
+                          </Tooltip>
+                          <Tooltip content="Eliminar foto" relationship="label">
+                            <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => setToDelete(p)} />
+                          </Tooltip>
+                        </div>
                       )}
                     </div>
                   </div>

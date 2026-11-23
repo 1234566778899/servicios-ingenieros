@@ -6,7 +6,7 @@ import { Checkmark16Filled, Save20Regular } from '@fluentui/react-icons';
 import { AsyncButton, PageHeader, Loading, ErrorBar } from '../../components/common';
 import { useAuth } from '../../lib/auth';
 import { useCatalogs } from '../../lib/catalogs';
-import { useRouter } from '../../lib/router';
+import { servicesUrl, useRouter } from '../../lib/router';
 import { loadServiceBundle, photoStagesDone, splitLines, usesEquipment, type ServiceBundle } from '../../lib/services';
 import { useServicePresence } from '../../lib/presence';
 import { StepDatos } from './StepDatos';
@@ -140,6 +140,8 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
   };
 
   const svc = bundle?.service;
+  // Vista previa del código para un servicio nuevo (el real lo asigna el servidor al crearlo)
+  const [nextCode, setNextCode] = useState('');
   const member = svc && [svc.created_by, svc.lead_tech_id, ...svc.support_tech_ids].includes(profile!.id);
   const readOnly = !!svc && !(can('servicios.editar_otros') || (can('servicios.editar_propios') && member));
 
@@ -165,19 +167,20 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
       <PageHeader
         crumbs={[
           { label: 'Inicio', to: '/' },
-          { label: 'Servicios', to: '/servicios' },
+          { label: 'Servicios', to: servicesUrl() },
           ...(svc ? [{ label: svc.code, to: `/servicios/${svc.id}` }, { label: 'Editar' }] : [{ label: 'Nuevo' }]),
         ]}
-        title={svc ? `${svc.code} · ${cat.siteName(svc.site_id)}` : 'Nuevo servicio técnico'}
+        title={svc ? `${svc.code} · ${cat.siteName(svc.site_id)}` : `Nuevo servicio técnico${nextCode ? ` · ${nextCode}` : ''}`}
         badges={readOnly && <Badge appearance="tint" color="warning">Solo lectura</Badge>}
         actions={
           <>
             <AsyncButton onClick={async () => {
               // Con un servicio ya creado se guarda antes de salir; si falla (validación, conflicto) se queda en el paso
               if (svc && saveHandler && !readOnly && !(await saveHandler())) return;
-              navigate(svc ? `/servicios/${svc.id}` : '/servicios');
+              navigate(svc ? `/servicios/${svc.id}` : servicesUrl());
             }} disabled={!!pending}>{svc ? 'Cerrar' : 'Cancelar'}</AsyncButton>
-            {!readOnly && saveHandler && (
+            {/* Al crear solo está «Crear y continuar»: el borrador aparece cuando el servicio ya existe */}
+            {!readOnly && saveHandler && svc && (
               <Button
                 icon={saving ? <Spinner size="tiny" /> : <Save20Regular />}
                 disabled={saving || !!pending}
@@ -238,7 +241,7 @@ export function ServicioWizard({ serviceId }: { serviceId?: string }) {
           se calculan al abrir el paso y, sin la lista de sedes, la tienda salía como «—» */}
       {((serviceId && !bundle) || (step === 'datos' && cat.loading)) && !error && <Loading />}
       {(!serviceId || bundle) && step === 'datos' && !cat.loading && (
-        <StepDatos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} withEquipment={withEquipment} />
+        <StepDatos bundle={bundle} reload={reload} readOnly={readOnly} goTo={goTo} registerSave={register} withEquipment={withEquipment} onNextCode={setNextCode} />
       )}
       {bundle && step === 'equipos' && <StepEquipos bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} />}
       {bundle && step === 'checklist' && <StepChecklist bundle={bundle} reload={reload} patch={patch} readOnly={readOnly} goTo={goTo} />}

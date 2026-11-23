@@ -26,7 +26,8 @@ const NEW_SITE = '__nueva_sede__';
 const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   form: {
-    display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px 16px',
+    // alignItems start: la dirección bajo la tienda no estira los campos de su fila
+    display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px 16px', alignItems: 'start',
     '@media (max-width: 1000px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }, '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
     '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 },
   },
@@ -56,9 +57,9 @@ const LABELS: Record<keyof Form, string> = {
 const norm = (v: unknown) => (v === '' ? null : v ?? null);
 const same = (a: unknown, b: unknown) => JSON.stringify(norm(a)) === JSON.stringify(norm(b));
 
-export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEquipment }: {
+export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEquipment, onNextCode }: {
   bundle: ServiceBundle | null; reload: () => Promise<void>; readOnly: boolean; goTo: StepProps['goTo'];
-  registerSave: (h: SaveHandler | null) => void; withEquipment: boolean;
+  registerSave: (h: SaveHandler | null) => void; withEquipment: boolean; onNextCode?: (code: string) => void;
 }) {
   const s = useStyles();
   const cat = useCatalogs();
@@ -105,7 +106,6 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
     !svc || generated(svc.cover_title, (st) => coverTitle(svc.service_type, svc.specialty, st, svcEqMode), svc.client_id));
   const [autoDesc, setAutoDesc] = useState(() =>
     !svc || generated(svc.description, (st) => memoria(svc.service_type, svc.specialty, st, svcEqMode), svc.client_id));
-  const [nextCode, setNextCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ server: Service; fields: (keyof Form)[] } | null>(null);
   const [choice, setChoice] = useState<Record<string, 'mine' | 'cloud'>>({});
@@ -118,7 +118,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
 
   // Vista previa: el código real lo asigna el servidor al guardar (con el año de la fecha de ejecución)
   useEffect(() => {
-    if (!svc) supabase.rpc('peek_service_code', { p_date: form.execution_date || null }).then(({ data }) => setNextCode(data ?? ''));
+    if (!svc) supabase.rpc('peek_service_code', { p_date: form.execution_date || null }).then(({ data }) => onNextCode?.(data ?? ''));
   }, [svc, form.execution_date]);
 
   // Textos automáticos mientras el usuario no los edite a mano
@@ -342,12 +342,9 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
     <>
       <ErrorBar error={error} />
       <div className={s.grid}>
-        <Section title="Portada y sección 1 · Memoria descriptiva">
+        <Section title="Datos del servicio">
           <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0 }}>
             <div className={s.form}>
-              <Field label="Código de servicio">
-                <Input readOnly value={svc?.code ?? nextCode} />
-              </Field>
               <Field label="Orden de trabajo / OC">
                 <Input value={form.work_order ?? ''} onChange={(_, d) => set('work_order', d.value)} placeholder="OT-00000" />
               </Field>
@@ -362,7 +359,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                   {cat.clients.map((c) => <Option key={c.id} value={c.id}>{c.name}</Option>)}
                 </Dropdown>
               </Field>
-              <Field label="Tienda / Sede" required>
+              <Field label="Tienda / Sede" required hint={siteAddress(site) || undefined}>
                 <Combobox placeholder={form.client_id ? `Busca entre ${sites.length} sedes` : 'Elige un cliente'} disabled={!form.client_id}
                   value={siteQuery} selectedOptions={[form.site_id]}
                   // Con una sede elegida, entrar al campo selecciona su nombre: lo que se escriba lo reemplaza
@@ -439,9 +436,6 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                   {techs.filter((u) => u.id !== form.lead_tech_id).map((u) => <Option key={u.id} value={u.id}>{u.full_name}</Option>)}
                 </Dropdown>
               </Field>
-              <Field label="Dirección (de la sede)" className={s.span2}>
-                <Input readOnly value={siteAddress(site)} placeholder="Se completa al elegir la sede" />
-              </Field>
               <Field label="Contacto de tienda">
                 <Input value={form.site_contact ?? ''} onChange={(_, d) => set('site_contact', d.value)} />
               </Field>
@@ -484,16 +478,16 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
         </Section>
 
         <div className={s.col}>
-          <Section title="Detalles previos" subtitle="Sección 2">
+          <Section title="Detalles previos">
             <ConceptList kind="detalle" specialty="" items={form.prev_details} readOnly={readOnly}
               onChange={(v) => set('prev_details', v)} placeholder="Nuevo detalle…" />
           </Section>
-          {equipmentMode && (
+          {equipmentMode && svc && (
             <Section title="Resumen de equipos">
               <Text block>
                 {bundle?.equipment.length
                   ? `• ${equipmentSummary(form.service_type, bundle.equipment, cat.typeName)}`
-                  : svc ? 'Aún no hay equipos.' : 'Al crear el servicio se cargan los equipos registrados de la sede.'}
+                  : 'Aún no hay equipos.'}
               </Text>
             </Section>
           )}

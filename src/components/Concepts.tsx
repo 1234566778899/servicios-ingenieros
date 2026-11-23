@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Caption1, Combobox, Option, Textarea, Tooltip, makeStyles, tokens } from '@fluentui/react-components';
 import { Add20Regular, ArrowDown16Regular, ArrowUp16Regular, Delete16Regular } from '@fluentui/react-icons';
 import { supabase } from '../lib/supabase';
@@ -9,8 +9,17 @@ const useStyles = makeStyles({
   list: { display: 'flex', flexDirection: 'column', gap: '6px' },
   // Las filas registradas y la de agregar comparten columnas: número · texto · acciones
   row: { display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr) 96px', gap: '6px', alignItems: 'start' },
-  mark: { paddingTop: '6px', textAlign: 'right', color: tokens.colorNeutralForeground3 },
+  // Los botones de cada fila aparecen al pasar el mouse o al editarla; en pantallas táctiles quedan siempre visibles
+  item: {
+    '& .concept-tools': { opacity: 0, transitionProperty: 'opacity', transitionDuration: tokens.durationFaster },
+    '&:hover .concept-tools, &:focus-within .concept-tools': { opacity: 1 },
+    '@media (hover: none)': { '& .concept-tools': { opacity: 1 } },
+  },
+  // Misma altura de línea que el texto del cuadro: la viñeta queda a la altura de la primera línea
+  mark: { paddingTop: '6px', textAlign: 'right', fontSize: tokens.fontSizeBase300, lineHeight: tokens.lineHeightBase300, color: tokens.colorNeutralForeground3 },
   tools: { display: 'flex', alignItems: 'center', paddingTop: '2px' },
+  // Cuadro del alto de su texto (una línea si es corto) que crece al escribir
+  auto: { minHeight: 'unset', '& textarea': { minHeight: 'unset', overflowY: 'hidden', resize: 'none' } },
   option: { whiteSpace: 'normal' },
 });
 
@@ -90,6 +99,34 @@ export function ConceptInput({ kind, specialty, value, onChange, onPick, placeho
   );
 }
 
+/** Cuadro de texto del alto de su contenido */
+function AutoTextarea({ value, readOnly, onChange, onBlur }: {
+  value: string; readOnly?: boolean; onChange: (v: string) => void; onBlur: () => void;
+}) {
+  const s = useStyles();
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const fit = () => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  useLayoutEffect(fit, [value]);
+  // Al cambiar el ancho (ventana, panel) cambia cuántas líneas ocupa el texto
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let w = el.clientWidth;
+    const ro = new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; fit(); } });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <Textarea className={s.auto} textarea={{ ref }} rows={1} resize="none" value={value} readOnly={readOnly}
+      onChange={(_, d) => onChange(d.value)} onBlur={onBlur} />
+  );
+}
+
 /**
  * Lista editable de textos (un párrafo por elemento) con sugerencias de conceptos para agregar.
  * Se usa para detalles previos, trabajos realizados, conclusiones, observaciones y recomendaciones.
@@ -119,13 +156,12 @@ export function ConceptList({ kind, specialty, items, onChange, readOnly, placeh
   return (
     <div className={s.list}>
       {items.map((t, i) => (
-        <div key={i} className={s.row}>
-          <Caption1 className={s.mark}>{numbered ? `${i + 1}.` : '•'}</Caption1>
-          <Textarea value={t} readOnly={readOnly} resize="vertical" rows={Math.min(4, Math.max(1, Math.ceil(t.length / 90)))}
-            onChange={(_, d) => set(i, d.value)}
+        <div key={i} className={`${s.row} ${s.item}`}>
+          <span className={s.mark}>{numbered ? `${i + 1}.` : '•'}</span>
+          <AutoTextarea value={t} readOnly={readOnly} onChange={(v) => set(i, v)}
             onBlur={() => !t.trim() && onChange(items.filter((_, j) => j !== i))} />
           {!readOnly && (
-            <div className={s.tools}>
+            <div className={`${s.tools} concept-tools`}>
               <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Subir" disabled={i === 0} onClick={() => move(i, -1)} />
               <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label="Bajar" disabled={i === items.length - 1} onClick={() => move(i, 1)} />
               <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label="Quitar" onClick={() => onChange(items.filter((_, j) => j !== i))} />
@@ -148,7 +184,7 @@ export function ConceptList({ kind, specialty, items, onChange, readOnly, placeh
             if (!draft.trim() || !e.currentTarget.contains(e.target) || e.currentTarget.contains(to) || to?.closest('[role="listbox"], [role="dialog"], [role="alertdialog"]')) return;
             add(draft);
           }}>
-          <Caption1 className={s.mark}>{numbered ? `${items.length + 1}.` : '•'}</Caption1>
+          <span className={s.mark}>{numbered ? `${items.length + 1}.` : '•'}</span>
           <ConceptInput kind={kind} specialty={specialty} value={draft} onChange={(v) => { picked.current = false; setDraft(v); }} exclude={items}
             onPick={(t) => { picked.current = true; add(t); }}
             placeholder={placeholder ?? 'Escribe o elige un concepto guardado…'} />
