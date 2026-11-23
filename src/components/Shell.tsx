@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Avatar, Button, Caption1, mergeClasses, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, NavDrawer,
-  NavDrawerBody, NavItem, NavSectionHeader, SearchBox, Text, makeStyles, tokens, MessageBar,
+  NavDrawerBody, NavItem, NavSectionHeader, Text, makeStyles, tokens, MessageBar,
   MessageBarBody, MessageBarActions,
 } from '@fluentui/react-components';
 import {
@@ -15,6 +15,7 @@ import { useRouter } from '../lib/router';
 import { useConnection } from '../lib/connection';
 import { useCatalogs } from '../lib/catalogs';
 import { useCompact } from '../lib/media';
+import { GlobalSearch } from './GlobalSearch';
 
 const Home = bundleIcon(Home20Filled, Home20Regular);
 const Wrench = bundleIcon(WrenchScrewdriver20Filled, WrenchScrewdriver20Regular);
@@ -33,7 +34,6 @@ const useStyles = makeStyles({
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px',
     padding: '8px 20px', '@media (max-width: 600px)': { padding: '8px 10px', gap: '8px' }, borderBottom: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground1,
   },
-  search: { width: '360px', maxWidth: '40vw', '@media (max-width: 900px)': { flex: 1, width: 'auto', maxWidth: 'none', minWidth: 0 } },
   content: { flex: 1, overflow: 'auto', padding: '20px 28px 28px', '@media (max-width: 600px)': { padding: '12px 12px 20px' } },
   userBtn: { display: 'flex', alignItems: 'center', gap: '8px' },
 });
@@ -50,7 +50,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const { path, navigate } = useRouter();
   const conn = useConnection();
   const cat = useCatalogs();
-  const [q, setQ] = useState('');
   const compact = useCompact();
   const [menuOpen, setMenuOpen] = useState(false);
   // Al navegar en modo compacto se cierra el menú
@@ -93,15 +92,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <div className={s.main}>
         <header className={s.topbar}>
           {compact && <Button appearance="subtle" icon={<Navigation20Regular />} aria-label="Abrir menú" onClick={() => setMenuOpen(true)} />}
-          <SearchBox
-            className={s.search}
-            placeholder="Buscar servicio, equipo o cliente…"
-            value={q}
-            onChange={(_, d) => setQ(d.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && q.trim()) navigate(`/servicios?q=${encodeURIComponent(q.trim())}`);
-            }}
-          />
+          <GlobalSearch />
           <Menu>
             <MenuTrigger>
               <Button appearance="subtle" icon={<ChevronDown16Regular />} iconPosition="after">
