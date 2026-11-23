@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import {
-  Button, Caption1, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field,
+  Button, Caption1, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Dropdown, Field,
   Input, Link, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarBody, Option, Radio,
   RadioGroup, Spinner, Switch, Tab, TabList, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text,
   Textarea, makeStyles, tokens,
@@ -15,6 +15,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Pager, usePageSize } from '../components/Pager';
 import { useAuth } from '../lib/auth';
 import { useCatalogs } from '../lib/catalogs';
+import { useNavigationBlock, type Blocker } from '../lib/router';
 import { supabase, must, fetchAll } from '../lib/supabase';
 import { useAsync } from '../lib/useAsync';
 import { fmtDateTime, fold } from '../lib/format';
@@ -27,13 +28,21 @@ const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: '280px 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px' },
   footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', gap: '12px' },
-  form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
+  // alignItems start: un campo con texto de ayuda no estira al de al lado
+  form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', alignItems: 'start', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
   span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
   filters: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '12px', flexWrap: 'wrap' },
   // Columnas secundarias que se ocultan en celular (y su reemplazo compacto)
   wideOnly: { '@media (max-width: 600px)': { display: 'none' } },
   narrowOnly: { display: 'none', '@media (max-width: 600px)': { display: 'block' } },
   pair: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
+  // Fila de actividad: N.º y, al pasar el mouse o con el foco, las flechas para ordenar (en pantallas táctiles siempre)
+  order: { display: 'flex', alignItems: 'center', gap: '2px' },
+  itemRow: {
+    '& .order-tools': { opacity: 0, transitionProperty: 'opacity', transitionDuration: tokens.durationFaster },
+    '&:hover .order-tools, &:focus-within .order-tools': { opacity: 1 },
+    '@media (hover: none)': { '& .order-tools': { opacity: 1 } },
+  },
 });
 
 const TABS = [
@@ -47,8 +56,14 @@ const TABS = [
 export function Catalogos() {
   const s = useStyles();
   const { can } = useAuth();
-  const [tab, setTab] = useState('checklist');
+  const [tab, setTabState] = useState('checklist');
   const admin = can('catalogos.admin');
+  // El checklist con cambios sin guardar pide confirmar antes de cambiar de pestaña
+  const tabGuard = useRef<Blocker | null>(null);
+  const setTab = (t: string) => {
+    const go = () => setTabState(t);
+    if (t === tab || !tabGuard.current?.(go)) go();
+  };
   // Las cuatro pestañas no caben en celular: se cambian por un desplegable
   const narrow = useMediaQuery('(max-width: 700px)');
   return (
@@ -68,7 +83,7 @@ export function Catalogos() {
       {!admin && (
         <MessageBar style={{ marginBottom: 12 }}><MessageBarBody>Solo lectura: administrar catálogos requiere el permiso “Catálogos y plantillas de checklist”.</MessageBarBody></MessageBar>
       )}
-      {tab === 'checklist' && <ChecklistTemplates admin={admin} />}
+      {tab === 'checklist' && <ChecklistTemplates admin={admin} guardRef={tabGuard} />}
       {tab === 'hallazgos' && <FindingsCatalog admin={admin} />}
       {tab === 'conceptos' && <ConceptsCatalog admin={admin} />}
       {tab === 'clientes' && <ClientsSites admin={admin} />}
@@ -86,7 +101,7 @@ export function Catalogos() {
 
 type ItemDraft = Omit<TemplateItem, 'id' | 'template_id'> & { id?: string };
 
-function ChecklistTemplates({ admin }: { admin: boolean }) {
+function ChecklistTemplates({ admin, guardRef }: { admin: boolean; guardRef: MutableRefObject<Blocker | null> }) {
   const s = useStyles();
   const cat = useCatalogs();
   const notify = useNotify();
@@ -104,6 +119,11 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
   const { data, reload } = useAsync(async () => {
     const tpls = must(await supabase.from('checklist_templates').select('*, checklist_template_items(count)').order('version', { ascending: false })) as (ChecklistTemplate & { checklist_template_items: { count: number }[] })[];
     return tpls;
+  }, []);
+  // Categorías ya usadas en cualquier checklist: se sugieren para no crear variantes («Electrico» y «Eléctrico»)
+  const { data: knownCategories } = useAsync(async () => {
+    const rows = await fetchAll<{ category: string }>((a, b) => supabase.from('checklist_template_items').select('category').order('id').range(a, b));
+    return [...new Set(rows.map((r) => r.category.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
   }, []);
 
   const versions = (data ?? []).filter((t) => t.equipment_type_id === typeId);
@@ -130,6 +150,17 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
 
   /** Si hay ediciones sin guardar, pide confirmar antes de cambiar de tipo o de versión. */
   const guard = (go: () => void) => (dirty ? setLeaving(() => go) : go());
+  // Lo mismo al ir a otra pestaña de Catálogos, a otra pantalla o al recargar
+  const block = useCallback<Blocker>((go) => { setLeaving(() => go); return true; }, []);
+  useNavigationBlock(dirty ? block : null);
+  useEffect(() => {
+    guardRef.current = dirty ? block : null;
+    return () => { guardRef.current = null; };
+  }, [dirty, block, guardRef]);
+  const categories = useMemo(
+    () => [...new Set([...(knownCategories ?? []), ...items.map((i) => i.category.trim()).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'es')),
+    [knownCategories, items],
+  );
 
   /** Guardar crea una versión nueva: los servicios ya registrados conservan la suya. */
   const saveVersion = async () => {
@@ -185,7 +216,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
           <EquipmentRail equipment={typeRail} selected={typeId} onSelect={(id) => guard(() => { setTypeId(id); setViewVersion(null); })} sub={() => null}
             right={(e) => {
               const v = (data ?? []).find((t) => t.equipment_type_id === e.id && t.is_current);
-              return <Caption1>{v ? `${v.checklist_template_items[0]?.count ?? 0} act. · v${v.version}` : 'Sin plantilla'}</Caption1>;
+              return <Caption1 style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{v ? `${v.checklist_template_items[0]?.count ?? 0} act. · v${v.version}` : 'Sin plantilla'}</Caption1>;
             }} />
         )}
       </Section>
@@ -195,6 +226,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
           <div>
             <Text size={500} weight="semibold" block>{cat.typeName(typeId)}</Text>
             <Caption1>
+              {dirty && <Text size={200} weight="semibold" style={{ color: tokens.colorPaletteMarigoldForeground2 }}>Cambios sin guardar · </Text>}
               {shown ? `Versión ${shown.version}${shown.is_current ? ' (vigente)' : ''} · usada en ${loaded?.uses ?? 0} equipos de servicios · ${fmtDateTime(shown.created_at)}` : 'Sin plantilla: agrega actividades y guarda la versión 1.'}
             </Caption1>
           </div>
@@ -221,6 +253,15 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
                 <Button icon={<Add20Regular />} onClick={() => setItems((xs) => [...xs, { category: xs.at(-1)?.category ?? 'General', activity: '', response_type: 'cn', value_unit: null, required: true, position: xs.length + 1 }])}>
                   Agregar actividad
                 </Button>
+                {/* Con cambios, guardar y descartar quedan a la vista sin bajar hasta el final de la lista */}
+                {dirty && (
+                  <>
+                    <Button disabled={saving} onClick={() => setItems(loaded?.items.map(({ template_id: _t, ...i }) => i) ?? [])}>Descartar</Button>
+                    <Button appearance="primary" disabled={saving || !items.length} onClick={saveVersion}>
+                      {saving ? <Spinner size="tiny" /> : `Guardar como versión ${Math.max(0, ...versions.map((v) => v.version)) + 1}`}
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -231,8 +272,7 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
         <Table size="small">
           <TableHeader>
             <TableRow>
-              <TableHeaderCell style={{ width: 70 }}>Orden</TableHeaderCell>
-              <TableHeaderCell style={{ width: 44 }}>N.º</TableHeaderCell>
+              <TableHeaderCell style={{ width: 84 }}>N.º</TableHeaderCell>
               <TableHeaderCell style={{ width: 170 }}>Categoría</TableHeaderCell>
               <TableHeaderCell>Actividad</TableHeaderCell>
               <TableHeaderCell style={{ width: 210 }}>Tipo de respuesta</TableHeaderCell>
@@ -243,13 +283,29 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
           </TableHeader>
           <TableBody>
             {!itemsLoading && items.map((it, i) => (
-              <TableRow key={it.id ?? `new-${i}`}>
+              <TableRow key={it.id ?? `new-${i}`} className={s.itemRow}>
                 <TableCell>
-                  <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Subir" disabled={!editable || i === 0} onClick={() => move(i, -1)} />
-                  <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label="Bajar" disabled={!editable || i === items.length - 1} onClick={() => move(i, 1)} />
+                  <span className={s.order}>
+                    <span style={{ minWidth: 18, textAlign: 'right' }}>{i + 1}</span>
+                    {editable && (
+                      <span className="order-tools" style={{ display: 'inline-flex' }}>
+                        <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Subir" disabled={i === 0} onClick={() => move(i, -1)} />
+                        <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label="Bajar" disabled={i === items.length - 1} onClick={() => move(i, 1)} />
+                      </span>
+                    )}
+                  </span>
                 </TableCell>
-                <TableCell>{i + 1}</TableCell>
-                <TableCell><Input size="small" value={it.category} readOnly={!editable} onChange={(_, d) => set(i, { category: d.value })} style={{ width: '100%' }} /></TableCell>
+                <TableCell>
+                  {editable ? (
+                    <Combobox size="small" freeform value={it.category} selectedOptions={[]} style={{ minWidth: 0, width: '100%' }}
+                      input={{ style: { width: '100%' } }}
+                      onChange={(e) => set(i, { category: e.target.value })}
+                      onOptionSelect={(_, d) => d.optionText && set(i, { category: d.optionText })}>
+                      {/* Con una categoría ya elegida se ofrecen todas; mientras se escribe otra, solo las que coinciden */}
+                      {categories.filter((c) => !it.category.trim() || categories.includes(it.category.trim()) || fold(c).includes(fold(it.category.trim()))).map((c) => <Option key={c}>{c}</Option>)}
+                    </Combobox>
+                  ) : <Input size="small" value={it.category} readOnly style={{ width: '100%' }} />}
+                </TableCell>
                 <TableCell><Input size="small" value={it.activity} readOnly={!editable} onChange={(_, d) => set(i, { activity: d.value })} style={{ width: '100%' }} /></TableCell>
                 <TableCell>
                   <Dropdown size="small" disabled={!editable} style={{ minWidth: 0, width: '100%' }}
@@ -260,7 +316,10 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
                   </Dropdown>
                 </TableCell>
                 <TableCell>
-                  <Input size="small" disabled={!editable || it.response_type !== 'cn_value'} value={it.value_unit ?? ''} placeholder="°C, V…" onChange={(_, d) => set(i, { value_unit: d.value })} style={{ width: '100%' }} />
+                  {/* Solo las actividades con valor llevan unidad */}
+                  {it.response_type === 'cn_value' && (
+                    <Input size="small" readOnly={!editable} value={it.value_unit ?? ''} placeholder="°C, V…" onChange={(_, d) => set(i, { value_unit: d.value })} style={{ width: '100%' }} />
+                  )}
                 </TableCell>
                 <TableCell><Switch checked={it.required} disabled={!editable} onChange={(_, d) => set(i, { required: d.checked })} aria-label="Obligatoria" /></TableCell>
                 <TableCell>
@@ -276,12 +335,6 @@ function ChecklistTemplates({ admin }: { admin: boolean }) {
             <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
               Al guardar cambios se crea una nueva versión. Los servicios ya registrados conservan la versión con la que se hicieron.
             </Caption1>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button disabled={!dirty || saving} onClick={() => setItems(loaded?.items.map(({ template_id: _t, ...i }) => i) ?? [])}>Descartar</Button>
-              <Button appearance="primary" disabled={!dirty || saving || !items.length} onClick={saveVersion}>
-                Guardar como versión {Math.max(0, ...versions.map((v) => v.version)) + 1}
-              </Button>
-            </div>
           </div>
         )}
       </Section>
@@ -487,6 +540,10 @@ function ClientsSites({ admin }: { admin: boolean }) {
       words.every((w) => fold(`${x.name} ${x.code ?? ''} ${x.district ?? ''} ${x.province ?? ''} ${x.address ?? ''}`).includes(w)));
   }, [cat.sites, clientId, q]);
   const pg = Math.min(page, Math.max(0, Math.ceil(rows.length / size) - 1));
+  // Prefijo y contacto casi nunca se llenan: sus columnas aparecen solo si alguna sede del cliente los tiene
+  const clientSites = cat.sites.filter((x) => x.client_id === clientId);
+  const showPrefix = clientSites.some((x) => x.equipment_prefix);
+  const showContact = clientSites.some((x) => x.contact_name);
 
   const saveClient = async () => {
     const ruc = client!.ruc?.trim() || null;
@@ -505,6 +562,11 @@ function ClientsSites({ admin }: { admin: boolean }) {
 
   const saveSite = async () => {
     if (!site?.name) return notify('Escribe el nombre de la sede', 'warning');
+    // Otra sede activa del mismo cliente con el mismo nombre o código: con cientos de sedes es fácil repetirla
+    const key = (v?: string | null) => fold(v ?? '').replace(/[\s-]/g, '');
+    const dup = cat.sites.find((x) => x.client_id === clientId && x.id !== site.id &&
+      (key(x.name) === key(site.name) || (!!key(site.code) && key(x.code) === key(site.code))));
+    if (dup) return notify('Sede repetida', 'warning', `Ya existe la sede «${cat.siteLabel(dup.id)}» en este cliente.`);
     const { id, ...row } = site;
     const payload = {
       ...row, client_id: clientId, equipment_prefix: row.equipment_prefix?.toUpperCase() || null,
@@ -526,7 +588,7 @@ function ClientsSites({ admin }: { admin: boolean }) {
       <Section title="Clientes" actions={admin && <Button size="small" icon={<Add20Regular />} aria-label="Nuevo cliente" onClick={() => setClient({ name: '' })} />}>
         {cat.loading ? <Spinner size="small" style={{ padding: 16 }} /> : (
           <EquipmentRail equipment={clientRail} selected={clientId} onSelect={setClientId} sub={() => null}
-            right={(c) => <Caption1>{cat.sites.filter((x) => x.client_id === c.id).length} sedes</Caption1>} />
+            right={(c) => <Caption1 style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{cat.sites.filter((x) => x.client_id === c.id).length} sedes</Caption1>} />
         )}
       </Section>
       <Section title={`Sedes de ${cat.clientName(clientId)}`}
@@ -534,7 +596,17 @@ function ClientsSites({ admin }: { admin: boolean }) {
         actions={admin && clientId && (
           <>
             <Button icon={<Edit20Regular />} onClick={() => setClient(current!)}>Editar cliente</Button>
-            <Button icon={<Delete20Regular />} onClick={() => setToDelete({ kind: 'client', row: current! })}>Eliminar</Button>
+            {/* Eliminar borra también sus sedes e inventario: en un menú aparte para no pulsarlo por error */}
+            <Menu>
+              <MenuTrigger disableButtonEnhancement>
+                <Button icon={<MoreHorizontal20Regular />} aria-label="Más acciones del cliente" />
+              </MenuTrigger>
+              <MenuPopover>
+                <MenuList>
+                  <MenuItem icon={<Delete20Regular />} onClick={() => setToDelete({ kind: 'client', row: current! })}>Eliminar cliente</MenuItem>
+                </MenuList>
+              </MenuPopover>
+            </Menu>
             <Button appearance="primary" icon={<Add20Regular />} onClick={() => setSite({})}>Nueva sede</Button>
           </>
         )}>
@@ -551,8 +623,8 @@ function ClientsSites({ admin }: { admin: boolean }) {
               <TableHeaderCell>Código</TableHeaderCell>
               <TableHeaderCell>Dirección</TableHeaderCell>
               <TableHeaderCell>Distrito / provincia</TableHeaderCell>
-              <TableHeaderCell>Prefijo de equipos</TableHeaderCell>
-              <TableHeaderCell>Contacto</TableHeaderCell>
+              {showPrefix && <TableHeaderCell>Prefijo de equipos</TableHeaderCell>}
+              {showContact && <TableHeaderCell>Contacto</TableHeaderCell>}
               {admin && <TableHeaderCell style={{ width: 130 }} />}
             </TableRow>
           </TableHeader>
@@ -563,8 +635,8 @@ function ClientsSites({ admin }: { admin: boolean }) {
                 <TableCell>{x.code ?? '—'}</TableCell>
                 <TableCell><Caption1>{x.address ?? '—'}</Caption1></TableCell>
                 <TableCell><Caption1>{[x.district, x.province].filter(Boolean).join(' · ') || '—'}</Caption1></TableCell>
-                <TableCell>{x.equipment_prefix ?? '—'}</TableCell>
-                <TableCell>{x.contact_name ?? '—'}</TableCell>
+                {showPrefix && <TableCell>{x.equipment_prefix ?? '—'}</TableCell>}
+                {showContact && <TableCell>{x.contact_name ?? '—'}</TableCell>}
                 {admin && (
                   <TableCell>
                     <Link onClick={() => setSite(x)}>Editar</Link>
