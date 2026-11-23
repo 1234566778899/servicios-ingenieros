@@ -346,7 +346,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
           <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0 }}>
             <div className={s.form}>
               <Field label="Código de servicio">
-                <Input readOnly value={svc?.code ?? `${nextCode} (automático)`} />
+                <Input readOnly value={svc?.code ?? nextCode} />
               </Field>
               <Field label="Orden de trabajo / OC">
                 <Input value={form.work_order ?? ''} onChange={(_, d) => set('work_order', d.value)} placeholder="OT-00000" />
@@ -449,7 +449,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                 className={s.span3}
                 label={
                   <span className={s.detail}>
-                    Título de portada {autoTitle ? '(automático)' : '(editado)'}
+                    Título de portada
                     {!autoTitle && (
                       <Tooltip content="Restaurar título automático" relationship="label">
                         <Button size="small" appearance="subtle" icon={<ArrowClockwise16Regular />} onClick={() => setAutoTitle(true)} />
@@ -464,7 +464,7 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
                 className={s.span3}
                 label={
                   <span className={s.detail}>
-                    Memoria descriptiva {autoDesc ? '(generada · editable)' : '(editada)'}
+                    Memoria descriptiva
                     {!autoDesc && (
                       <Tooltip content="Regenerar memoria descriptiva" relationship="label">
                         <Button size="small" appearance="subtle" icon={<ArrowClockwise16Regular />} onClick={() => setAutoDesc(true)} />
@@ -489,13 +489,12 @@ export function StepDatos({ bundle, reload, readOnly, goTo, registerSave, withEq
               onChange={(v) => set('prev_details', v)} placeholder="Nuevo detalle…" />
           </Section>
           {equipmentMode && (
-            <Section title="Resumen de equipos" subtitle="automático">
+            <Section title="Resumen de equipos">
               <Text block>
                 {bundle?.equipment.length
                   ? `• ${equipmentSummary(form.service_type, bundle.equipment, cat.typeName)}`
                   : svc ? 'Aún no hay equipos.' : 'Al crear el servicio se cargan los equipos registrados de la sede.'}
               </Text>
-              <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>Se completa con los equipos del Paso 2.</Caption1>
             </Section>
           )}
           <Section title="Formato del informe">

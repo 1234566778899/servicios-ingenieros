@@ -22,10 +22,11 @@ import { richToPlain } from '../lib/richText';
 import { STAGES, type Photo, type Report } from '../lib/types';
 
 const useStyles = makeStyles({
-  grid: { display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr' } },
-  col: { display: 'flex', flexDirection: 'column', gap: '16px' },
+  // minmax(0, …): sin esto un título largo sin saltos (p. ej. el de un grupo de fotos) ensancha la columna y desborda la página
+  grid: { display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  col: { display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 },
   kv: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px 24px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' }, '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
-  photos: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' },
+  photos: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px' },
   gallery: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' },
   thumb: {
     display: 'block', width: '100%', padding: 0, border: 'none', background: 'none', cursor: 'zoom-in', borderRadius: tokens.borderRadiusMedium,

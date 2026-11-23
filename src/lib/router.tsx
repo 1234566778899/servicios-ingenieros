@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, startTransition, useContext, useEffect, useState, type ReactNode } from 'react';
 
 const RouterCtx = createContext<{ path: string; navigate: (p: string) => void }>({ path: '/', navigate: () => {} });
 
@@ -9,7 +9,9 @@ function current() {
 export function RouterProvider({ children }: { children: ReactNode }) {
   const [path, setPath] = useState(current);
   useEffect(() => {
-    const onHash = () => setPath(current());
+    // En transición: si la pantalla nueva aún se está descargando (lazy), React deja visible la actual en vez de
+    // cambiar toda la página por el indicador de carga del Suspense
+    const onHash = () => startTransition(() => setPath(current()));
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);

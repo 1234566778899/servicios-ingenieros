@@ -215,9 +215,7 @@ export function StepEquipos({ bundle, reload, patch, readOnly, goTo }: StepProps
         {bundle.equipment.length > 0 && (
           <div className={s.summary}>
             <Caption1>Resumen para “Detalles previos”: </Caption1>
-            <Text size={200}>{equipmentSummary(svc.service_type, bundle.equipment, cat.typeName)}</Text>
-            <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>El estado final se calcula en el paso Checklist.</Caption1>
-          </div>
+            <Text size={200}>{equipmentSummary(svc.service_type, bundle.equipment, cat.typeName)}</Text>          </div>
         )}
       </Section>
       <div className={s.footer}>

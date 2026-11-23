@@ -19,7 +19,8 @@ import { friendlyError } from '../lib/errors';
 const useStyles = makeStyles({
   kpis: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px', '@media (max-width: 1000px)': { gridTemplateColumns: '1fr 1fr' } },
   filters: { display: 'flex', gap: '12px', alignItems: 'flex-end', marginBottom: '12px' },
-  form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
+  // alignItems start: sin esto el campo sin ayuda se estira al alto del de al lado y su caja queda desalineada
+  form: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px 16px', alignItems: 'start', '@media (max-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' }, '& .fui-Dropdown, & .fui-Input, & .fui-Combobox': { minWidth: 0 } },
   span2: { gridColumn: 'span 2', '@media (max-width: 600px)': { gridColumn: 'auto' } },
   name: { display: 'flex', alignItems: 'center', gap: '8px' },
   ellipsis: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
@@ -221,9 +222,6 @@ export function Usuarios() {
                   <Switch className={s.span2} label="Usuario activo" checked={draft.active ?? true} disabled={draft.id === me?.id}
                     onChange={(_, d) => setDraft({ ...draft, active: d.checked })} />
                 </div>
-                <MessageBar style={{ marginTop: 12 }}>
-                  <MessageBarBody>El usuario se crea en la base de datos centralizada en la nube; requiere conexión a Internet.</MessageBarBody>
-                </MessageBar>
               </DialogContent>
             )}
             <DialogActions>

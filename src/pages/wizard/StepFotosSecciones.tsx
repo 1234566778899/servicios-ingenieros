@@ -260,7 +260,7 @@ export function StepFotosSecciones({ bundle, reload, patch, readOnly, goTo }: St
                   <Input value={d.title ?? g.title} disabled={readOnly}
                     onChange={(_, x) => setDrafts((all) => ({ ...all, [g.id]: { ...all[g.id], title: x.value } }))} />
                 </Field>
-                <Field label="Descripción (va debajo del título, antes de las fotos)">
+                <Field label="Descripción">
                   <RichTextEditor disabled={readOnly} value={g.description ?? ''}
                     placeholder="Ej.: Se hace la inspección del tablero, llaves y rotulado…"
                     onChange={(v) => setDrafts((all) => ({ ...all, [g.id]: { ...all[g.id], description: v } }))}

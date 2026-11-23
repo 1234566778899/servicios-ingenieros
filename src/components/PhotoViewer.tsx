@@ -25,7 +25,7 @@ export function PhotoViewer({ photo, title, readOnly, onClose, onSave }: {
           </DialogTitle>
           <DialogContent>
             <PhotoEditor path={photo.storage_path} value={annotations} onChange={setAnnotations} readOnly={readOnly} />
-            <Field label="Comentario (va debajo de la foto en el informe)" style={{ marginTop: 12 }}>
+            <Field label="Comentario" style={{ marginTop: 12 }}>
               <Input value={caption} disabled={readOnly} placeholder={readOnly ? '' : 'Ej.: Limpieza de serpentín del condensador'}
                 onChange={(_, d) => setCaption(d.value)} />
             </Field>

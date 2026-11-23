@@ -159,7 +159,6 @@ export function StepHallazgos({ bundle, reload, patch, readOnly, goTo, registerS
       <div style={{ height: 16 }} />
       <Section
         title="Conclusiones y recomendaciones"
-        subtitle={manual ? 'Editadas manualmente' : 'Vista previa · se generan a partir de los hallazgos'}
         actions={!readOnly && (
           manual ? (
             <Tooltip content="Regenerar desde los hallazgos" relationship="label">

@@ -5,8 +5,8 @@ import {
   TableHeaderCell, TableRow, Text, makeStyles, tokens,
 } from '@fluentui/react-components';
 import {
-  ArrowDownload20Regular, ArrowExportLtr20Regular, Dismiss20Regular, DocumentPdf24Regular, DocumentText24Regular,
-  Open20Regular, Search20Regular,
+  ArrowDownload20Regular, ArrowExportLtr20Regular, Dismiss20Regular, DocumentPdf20Regular, DocumentPdf24Regular,
+  DocumentText20Regular, DocumentText24Regular, Open20Regular, Search20Regular,
 } from '@fluentui/react-icons';
 import { PageHeader, Section, ErrorBar } from '../components/common';
 import { DateInput } from '../components/DateInput';
@@ -63,10 +63,17 @@ export function Historial() {
     return query as unknown as PromiseLike<{ data: Row[] | null; error: any }>;
   }), [from, to, clientId, siteId, userId]);
 
-  const rows = useMemo(
-    () => (data ?? []).filter((r) => !q || `${r.number} ${r.services.code} ${r.file_base_name}`.toLowerCase().includes(q.toLowerCase())),
-    [data, q],
-  );
+  // Una fila por servicio con su última versión (los datos vienen del más reciente al más antiguo); las anteriores se ven en el panel
+  const rows = useMemo(() => {
+    const seen = new Set<string>();
+    return (data ?? []).filter((r) => {
+      if (seen.has(r.service_id)) return false;
+      seen.add(r.service_id);
+      return !q || `${r.number} ${r.services.code} ${r.file_base_name}`.toLowerCase().includes(q.toLowerCase());
+    });
+  }, [data, q]);
+  // La plantilla solo se muestra si en la lista hay más de una
+  const showTpl = new Set(rows.map((r) => r.template_id)).size > 1;
   const pages = Math.max(1, Math.ceil(rows.length / size));
   const pg = Math.min(page, pages - 1);
   const set = <T,>(fn: (v: T) => void) => (v: T) => { fn(v); setPage(0); };
@@ -153,30 +160,38 @@ export function Historial() {
               <TableHeaderCell>N.º informe</TableHeaderCell>
               <TableHeaderCell>Servicio</TableHeaderCell>
               <TableHeaderCell>Cliente · Sede</TableHeaderCell>
-              <TableHeaderCell>Plantilla</TableHeaderCell>
+              {showTpl && <TableHeaderCell>Plantilla</TableHeaderCell>}
               <TableHeaderCell>Generado por</TableHeaderCell>
               <TableHeaderCell>Fecha</TableHeaderCell>
-              <TableHeaderCell>Formatos</TableHeaderCell>
-              <TableHeaderCell style={{ width: 90 }} />
+              <TableHeaderCell style={{ width: 190 }}>Archivos</TableHeaderCell>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.slice(pg * size, (pg + 1) * size).map((r) => (
               <TableRow key={r.id} onDoubleClick={() => setOpen(r)}>
-                <TableCell><Link onClick={() => setOpen(r)}>{r.number}</Link>{r.version > 1 && <Caption1> v{r.version}</Caption1>}</TableCell>
+                <TableCell>
+                  <Link onClick={() => setOpen(r)}>{r.number}</Link>
+                  {r.version > 1 && <Caption1> v{r.version}</Caption1>}
+                </TableCell>
                 <TableCell>{r.services.code}</TableCell>
                 <TableCell>{cat.clientName(r.services.client_id)} · {cat.siteName(r.services.site_id)}</TableCell>
-                <TableCell>{tplName(r.template_id)}</TableCell>
+                {showTpl && <TableCell title={tplName(r.template_id)}>{cat.reportTemplates.find((x) => x.id === r.template_id)?.code ?? '—'}</TableCell>}
                 <TableCell>{cat.userName(r.generated_by)}</TableCell>
                 <TableCell>{fmtDateTime(r.generated_at)}</TableCell>
-                <TableCell>{formats(r) || <Caption1>sin archivos</Caption1>}</TableCell>
                 <TableCell>
-                  <Button size="small" appearance="subtle" icon={<Open20Regular />} aria-label="Abrir" disabled={!r.pdf_path && !r.docx_path}
-                    onClick={() => act(r, r.pdf_path ? 'pdf' : 'docx', 'open')} />
-                  {can('historial.descargar') && (
-                    <Button size="small" appearance="subtle" icon={<ArrowDownload20Regular />} aria-label="Descargar" disabled={!r.pdf_path && !r.docx_path}
-                      onClick={() => act(r, r.pdf_path ? 'pdf' : 'docx', 'save')} />
-                  )}
+                  {(['docx', 'pdf'] as const).filter((k) => (k === 'docx' ? r.docx_path : r.pdf_path)).map((k) => (
+                    <span key={k} style={{ display: 'inline-flex', marginRight: 8 }}>
+                      <Button size="small" appearance="subtle" icon={k === 'docx' ? <DocumentText20Regular /> : <DocumentPdf20Regular />}
+                        title={`Abrir ${k === 'docx' ? 'Word' : 'PDF'}`} onClick={() => act(r, k, 'open')}>
+                        {k === 'docx' ? 'Word' : 'PDF'}
+                      </Button>
+                      {can('historial.descargar') && (
+                        <Button size="small" appearance="subtle" icon={<ArrowDownload20Regular />} aria-label={`Descargar ${k === 'docx' ? 'Word' : 'PDF'}`}
+                          onClick={() => act(r, k, 'save')} />
+                      )}
+                    </span>
+                  ))}
+                  {!r.docx_path && !r.pdf_path && <Caption1>sin archivos</Caption1>}
                 </TableCell>
               </TableRow>
             ))}
